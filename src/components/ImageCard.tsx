@@ -139,21 +139,23 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
             <div className="absolute top-3 left-3 z-30 group/checkbox">
                 <div className="relative flex items-center justify-center">
                     {/* Background glow for better visibility on dark/light images */}
-                    <div className="absolute inset-0 bg-black/40 rounded-md blur-sm group-hover/checkbox:bg-black/60 transition-all"></div>
+                    <div className={`absolute inset-0 rounded-md blur-sm transition-all ${isSelected ? 'bg-indigo-500/50' : 'bg-black/40 group-hover/checkbox:bg-black/60'}`}></div>
 
-                    <input
-                        type="checkbox"
-                        checked={isSelected || false}
-                        onChange={(e) => {
+                    <div
+                        onClick={(e) => {
                             e.stopPropagation();
                             onToggleSelection && onToggleSelection();
                         }}
-                        className="peer appearance-none w-6 h-6 border-2 border-slate-400 rounded-md bg-slate-900/60 backdrop-blur-sm 
-                                 checked:bg-indigo-500 checked:border-indigo-500 checked:shadow-[0_0_10px_rgba(99,102,241,0.5)]
-                                 hover:border-white hover:bg-slate-800/80
-                                 transition-all cursor-pointer relative z-10"
-                    />
-                    <Check className="w-4 h-4 text-white absolute z-20 opacity-0 peer-checked:opacity-100 pointer-events-none transition-all scale-50 peer-checked:scale-100" strokeWidth={3} />
+                        className={`w-6 h-6 border-2 rounded-md backdrop-blur-sm transition-all cursor-pointer relative z-10 flex items-center justify-center
+                                  ${isSelected
+                                ? 'bg-indigo-500 border-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]'
+                                : 'bg-slate-900/60 border-slate-400 hover:border-white hover:bg-slate-800/80'
+                            }`}
+                    >
+                        {isSelected && (
+                            <Check className="w-4 h-4 text-white animate-in zoom-in duration-200" strokeWidth={3} />
+                        )}
+                    </div>
                 </div>
             </div>
 
