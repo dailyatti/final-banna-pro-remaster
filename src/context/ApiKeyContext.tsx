@@ -14,15 +14,11 @@ export const ApiKeyProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [isKeyValid, setIsKeyValid] = useState(false);
 
     useEffect(() => {
-        // Load from local storage or environment on mount
+        // Load from local storage on mount
         const storedKey = localStorage.getItem('GEMINI_API_KEY');
-        const envKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
 
         if (storedKey) {
             setApiKeyState(storedKey);
-            setIsKeyValid(true);
-        } else if (envKey) {
-            setApiKeyState(envKey);
             setIsKeyValid(true);
         }
     }, []);
