@@ -31,6 +31,10 @@ import { Loader2, Download, Lock, Wand2, PenTool, Layers, CopyCheck, BrainCircui
 const App: React.FC = () => {
     const { t, i18n } = useTranslation();
     const { apiKey, isKeyValid } = useApiKey();
+
+    useEffect(() => {
+        console.log("BananaAI Remaster Build: 2025-11-29T13:25:00 - Auth Screen Removed");
+    }, []);
     // const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true); // Removed as context handles it
 
     const [images, setImages] = useState<ImageItem[]>([]);
