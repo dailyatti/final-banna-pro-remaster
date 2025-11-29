@@ -1135,18 +1135,7 @@ const App: React.FC = () => {
             <AnimatePresence>{isOCRModalOpen && (<OCRSelectionModal isOpen={isOCRModalOpen} onClose={() => setIsOCRModalOpen(false)} images={images} onExtract={runOCR} />)}</AnimatePresence>
             <AnimatePresence>{editingId && (<ImageEditor imageUrl={images.find(i => i.id === editingId)?.previewUrl || ''} onSave={handleEditorSave} onClose={() => setEditingId(null)} onGenerativeFill={handleGenerativeFill} onRemoveText={() => { handleQuickRemoveText(editingId); setEditingId(null); }} />)}</AnimatePresence>
 
-            <VoiceAssistant
-                apiKey={apiKey}
-                onCommand={handleVoiceCommand}
-                onAudit={() => setIsOCRModalOpen(true)}
-                onApplyAll={applyBulkSettings}
-                currentLanguage={i18n.language}
-                images={images}
-                batchCompleteTrigger={batchCompleteTrigger}
-                nativePrompt={nativePrompt}
-                isNativeGenerating={isGeneratingNative}
-                modalsState={{ composite: isCompositeModalOpen, ocr: isOCRModalOpen, guide: isGuideOpen, langMenu: isLangMenuOpen }}
-            />
+
 
             <ApiKeyModal />
 
@@ -1390,6 +1379,19 @@ const App: React.FC = () => {
                 </div>
 
             </main>
+            <VoiceAssistant
+                apiKey={apiKey}
+                onCommand={handleVoiceCommand}
+                onAudit={() => setIsOCRModalOpen(true)}
+                onApplyAll={applyBulkSettings}
+                onCompositeUpdate={(updates: any) => setCompositeConfig((prev: any) => ({ ...prev, ...updates }))}
+                currentLanguage={i18n.language}
+                images={images}
+                batchCompleteTrigger={batchCompleteTrigger}
+                nativePrompt={nativePrompt}
+                isNativeGenerating={isGeneratingNative}
+                modalsState={{ composite: isCompositeModalOpen, ocr: isOCRModalOpen, guide: isGuideOpen, langMenu: isLangMenuOpen }}
+            />
         </div>
     );
 };

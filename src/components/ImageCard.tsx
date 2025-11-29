@@ -421,11 +421,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
                             </button>
                         )}
 
-                        {isSuccess && !isIdle && (
-                            <button onClick={handleDownload} className="flex items-center gap-2 px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/20 transition-all transform active:scale-95">
-                                <Download className="w-3.5 h-3.5" /> <span>{t('export')}</span>
-                            </button>
-                        )}
+
                     </div>
                 </div>
 
