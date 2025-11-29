@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { Mic, MicOff, Loader2, Sparkles } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
@@ -607,12 +608,13 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         }
     };
 
-    return (
+    return createPortal(
         <>
             <motion.div
                 drag
                 dragMomentum={false}
-                className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end gap-2 cursor-pointer"
+                whileDrag={{ scale: 1.1 }}
+                className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end gap-2 cursor-pointer touch-none"
             >
                 {isActive && (
                     <div className="flex flex-col gap-2 items-end">
@@ -630,16 +632,20 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                 )}
 
                 <button
-                    onClick={isActive ? stopSession : startSession}
+                    onClick={(e) => {
+                        e.stopPropagation(); // Prevent drag from capturing click
+                        isActive ? stopSession() : startSession();
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()} // Ensure clicks register immediately
                     className={`
-                    relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all
-                    ${isActive
+                        relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all
+                        ${isActive
                             ? 'bg-red-500 hover:bg-red-600'
                             : isConnecting
                                 ? 'bg-slate-700'
                                 : 'bg-gradient-to-br from-emerald-500 to-teal-600 hover:scale-110'
                         }
-                `}
+                    `}
                 >
                     {isActive && (
                         <div className="absolute inset-0 rounded-full border-2 border-white/30" style={{ transform: `scale(${1 + volume / 100})` }}></div>
@@ -650,6 +656,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     {isConnecting ? <Loader2 className="w-8 h-8 text-white animate-spin" /> : isActive ? <Mic className="w-8 h-8 text-white" /> : <MicOff className="w-8 h-8 text-white/80" />}
                 </button>
             </motion.div>
-        </>
+        </>,
+        document.body
     );
 };
