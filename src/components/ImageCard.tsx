@@ -49,13 +49,17 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
     }, [isProcessing]);
 
     const handleDownload = () => {
-        if (item.processedUrl) {
+        const url = item.processedUrl || item.previewUrl;
+        if (url) {
             const link = document.createElement('a');
-            link.href = item.processedUrl;
+            link.href = url;
             const ext = item.targetFormat.split('/')[1];
             const filename = item.customOutputName && item.customOutputName.trim() !== ''
                 ? item.customOutputName
                 : `banana_remaster_${item.originalMeta.name.split('.')[0]}`;
+
+            // If it's an uploaded image (no processedUrl), we might want to keep original extension or convert
+            // For simple download, let's trust the browser/link behavior for now, or just use the target format extension
             link.download = `${filename}.${ext}`;
             document.body.appendChild(link);
             link.click();
@@ -215,8 +219,8 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
                     </div>
                 )}
 
-                {/* Status Badges */}
-                <div className="absolute top-3 left-3 flex gap-2 z-10">
+                {/* Status Badges - Moved to avoid overlap with checkbox */}
+                <div className="absolute top-3 left-10 flex gap-2 z-10">
                     {isSuccess && <div className="bg-emerald-500/20 backdrop-blur-md text-emerald-400 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-emerald-500/30 shadow-lg"><CheckCircle2 className="w-3 h-3" /> {t('done')}</div>}
                     {isError && <div className="bg-red-500/20 backdrop-blur-md text-red-400 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 border border-red-500/30 shadow-lg"><AlertCircle className="w-3 h-3" /> {t('error')}</div>}
                     {isIdle && <div className="bg-slate-800/80 backdrop-blur-md text-slate-400 text-[10px] font-bold px-2.5 py-1 rounded-full border border-slate-700 flex items-center gap-1.5"><Clock className="w-3 h-3" /> {t('pending')}</div>}
