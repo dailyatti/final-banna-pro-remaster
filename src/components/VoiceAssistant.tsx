@@ -7,6 +7,7 @@ import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { ImageItem } from '../types';
 
 interface VoiceAssistantProps {
+    apiKey: string; // Added missing prop
     onCommand: (command: any) => void;
     onAudit: () => void;
     onApplyAll: () => void;
@@ -76,6 +77,7 @@ function createBlob(data: Float32Array, sampleRate: number): { data: string; mim
 }
 
 export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
+    apiKey, // Added missing prop
     onCommand,
     onAudit,
     onApplyAll,
@@ -301,10 +303,24 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const startSession = async () => {
         if (isActive) return;
+
+        if (!apiKey) {
+            // Fallback or error if no key provided
+            console.error("No API key provided to VoiceAssistant");
+            // Assuming toast is available or we should import it. 
+            // Since toast isn't imported in this file, we'll just log for now, 
+            // but the user said "nothing happens", so we should probably try to alert if possible.
+            // However, MainApp passes apiKey, so if it's missing, MainApp usually handles it.
+            // Let's just proceed with the fix.
+            setIsConnecting(false); // Ensure connecting state is reset
+            alert("Voice Assistant Error: No API key provided. Please check your configuration.");
+            return;
+        }
+
         setIsConnecting(true);
 
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: apiKey });
 
             const tools = [{
                 functionDeclarations: [
@@ -605,6 +621,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         } catch (e) {
             console.error(e);
             setIsConnecting(false);
+            // Alert user if connection fails
+            alert("Voice Assistant Error: " + (e as any).message);
         }
     };
 
