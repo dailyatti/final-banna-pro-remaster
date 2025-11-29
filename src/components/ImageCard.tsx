@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ImageItem, OutputFormat, AiResolution, AspectRatio, ProcessingStatus } from '../types';
 import { formatBytes } from '../services/imageUtils';
-import { Trash2, Download, AlertCircle, CheckCircle2, ScanLine, FileType, Monitor, Wand2, RefreshCw, PenTool, Type, Crop, Mic, Clock, Layers, RotateCcw, Share2, CopyPlus, MoreVertical, Loader2 } from 'lucide-react';
+import { Trash2, Download, AlertCircle, CheckCircle2, ScanLine, FileType, Monitor, Wand2, RefreshCw, PenTool, Type, Crop, Mic, Clock, Layers, RotateCcw, Share2, CopyPlus, MoreVertical, Loader2, Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
@@ -15,6 +15,8 @@ interface ImageCardProps {
     onEdit: (id: string) => void;
     onMultiVariant?: (id: string, type: 'RATIOS' | 'FORMATS' | 'VARIANTS') => void;
     displayIndex: number;
+    isSelected?: boolean;
+    onToggleSelection?: () => void;
 }
 
 // Processing Phase State
@@ -23,7 +25,7 @@ enum ProcessingPhase {
     GENERATING = 'GENERATING'
 }
 
-export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onProcess, onRemove, onEdit, onMultiVariant, displayIndex }) => {
+export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onProcess, onRemove, onEdit, onMultiVariant, displayIndex, isSelected, onToggleSelection }) => {
     const { t } = useTranslation();
     const [isPromptFocused, setIsPromptFocused] = useState(false);
     const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>(ProcessingPhase.SCANNING);
@@ -128,6 +130,22 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
             <button onClick={() => onRemove(item.id)} className="absolute top-3 right-3 p-2 bg-slate-950/80 backdrop-blur text-slate-500 hover:text-red-400 rounded-lg z-30 opacity-0 group-hover:opacity-100 transition-all duration-200 border border-slate-800 hover:border-red-900/50">
                 <Trash2 className="w-4 h-4" />
             </button>
+
+            {/* Selection Checkbox */}
+            <div className="absolute top-3 left-3 z-30">
+                <div className="relative flex items-center justify-center">
+                    <input
+                        type="checkbox"
+                        checked={item.isSelected || false}
+                        onChange={(e) => {
+                            e.stopPropagation();
+                            onToggleSelection && onToggleSelection();
+                        }}
+                        className="peer appearance-none w-5 h-5 border-2 border-slate-500 rounded bg-slate-900/50 checked:bg-indigo-500 checked:border-indigo-500 transition-all cursor-pointer"
+                    />
+                    <Check className="w-3.5 h-3.5 text-white absolute opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
+                </div>
+            </div>
 
             {/* Duplicate/Variant Badge */}
             {item.duplicateIndex && (

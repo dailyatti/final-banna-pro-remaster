@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import i18next, { SUPPORTED_LANGUAGES } from './services/i18n';
 import { Toaster, toast } from 'react-hot-toast';
+import { Layers, PenTool, CopyCheck, BrainCircuit, Trash2, PlusSquare, Loader2, FileText, X, Wand2, Download, Check, Copy, ClipboardCopy } from 'lucide-react';
 
 import { ImageUploader } from './components/ImageUploader';
 import { ImageCard } from './components/ImageCard';
@@ -19,15 +20,28 @@ import { Header } from './components/Layout/Header';
 import { Hero } from './components/Layout/Hero';
 import { ApiKeyModal } from './components/Modals/ApiKeyModal';
 import { useApiKey } from './context/ApiKeyContext';
-
-import { OutputFormat, AiResolution, AspectRatio, ImageItem, ProcessingStatus, NamingPattern } from './types';
-import { KEYBOARD_SHORTCUTS, ARIA_LABELS, PROMPTS } from './constants';
-import { getImageDimensions, fileToBase64, convertUrlToBlob, convertImageFormat } from './services/imageUtils';
-import { processImageWithGemini, extractTextFromImages, processCompositeGeneration, processGenerativeFill, generateImageFromText } from './services/geminiService';
+import {
+    ImageItem,
+    OutputFormat,
+    AiResolution,
+    AspectRatio,
+    NamingPattern,
+    ProcessingStatus
+} from './types';
+import {
+    convertImageFormat,
+    convertUrlToBlob,
+    fileToBase64,
+    getImageDimensions
+} from './services/imageUtils';
 import { loadSessionImages, saveSessionImages } from './services/storageService';
-
-import { Loader2, Download, Lock, Wand2, PenTool, Layers, CopyCheck, BrainCircuit, ClipboardCopy, PlusSquare, FileText, X, Copy, Trash2, Check } from 'lucide-react';
-
+import {
+    processImageWithGemini,
+    processGenerativeFill,
+    processCompositeGeneration,
+    extractTextFromImages,
+    generateImageFromText
+} from './services/geminiService';
 const App: React.FC = () => {
     const { t, i18n } = useTranslation();
     const { apiKey, isKeyValid } = useApiKey();
@@ -270,79 +284,7 @@ const App: React.FC = () => {
         }
     };
 
-    const handleSmartDownload = async (filter: 'ALL' | 'UPLOADED' | 'GENERATED' | 'SELECTED', selectedIds: string[] = []) => {
-        let targets = images;
-        if (filter === 'SELECTED') {
-            targets = images.filter(img => selectedIds.includes(img.id));
-        } else if (filter === 'UPLOADED') {
-            targets = images.filter(img => !img.processedUrl);
-        } else if (filter === 'GENERATED') {
-            targets = images.filter(img => !!img.processedUrl);
-        }
 
-        if (targets.length === 0) {
-            toast.error("No images match criteria");
-            return;
-        }
-
-        const toastId = toast.loading(`Preparing ${targets.length} files...`, { style: { borderRadius: '10px', background: '#333', color: '#fff' } });
-
-        try {
-            const zip = new JSZip();
-            let processedCount = 0;
-
-            for (const img of targets) {
-                let blob: Blob;
-                let ext: string;
-
-                // Determine source: Processed URL or Original File
-                if (img.processedUrl) {
-                    // It's a generated image, download directly
-                    blob = await convertUrlToBlob(img.processedUrl);
-                    ext = img.targetFormat.split('/')[1];
-                } else {
-                    // It's an uploaded image, convert to target format
-                    const base64 = await fileToBase64(img.file);
-                    const result = await convertImageFormat(base64, img.targetFormat, img.file.type);
-                    blob = result.blob;
-                    ext = img.targetFormat.split('/')[1];
-                }
-
-                const filename = img.customOutputName || img.originalMeta.name.split('.')[0];
-                // Ensure unique filenames in zip
-                const finalName = `${filename}_${img.id.slice(0, 4)}.${ext}`;
-
-                zip.file(finalName, blob);
-                processedCount++;
-            }
-
-            if (processedCount === 1) {
-                // Single file download
-                const content = await zip.file(Object.keys(zip.files)[0])?.async('blob');
-                if (content) {
-                    const link = document.createElement('a');
-                    link.href = URL.createObjectURL(content);
-                    link.download = Object.keys(zip.files)[0];
-                    link.click();
-                }
-            } else {
-                // Zip download
-                const content = await zip.generateAsync({ type: 'blob' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(content);
-                link.download = `BananaAI_Batch_${Date.now()}.zip`;
-                link.click();
-            }
-
-            toast.dismiss(toastId);
-            toast.success(`Downloaded ${processedCount} files`);
-
-        } catch (e) {
-            console.error("Download failed", e);
-            toast.dismiss(toastId);
-            toast.error("Download failed");
-        }
-    };
 
     const handleMultiVariant = (id: string, type: 'RATIOS' | 'FORMATS' | 'VARIANTS') => {
         const originalItem = images.find(i => i.id === id);
@@ -1031,6 +973,7 @@ const App: React.FC = () => {
         const count = selectedIds.length;
         setImages(prev => prev.filter(img => !selectedIds.includes(img.id)));
         toast.success(`Deleted ${count} images`);
+        setSelectedIds([]);
     };
 
     const selectAll = () => {
@@ -1040,12 +983,122 @@ const App: React.FC = () => {
 
     const deselectAll = () => {
         setSelectedIds([]);
-        toast('Deselected all');
+        toast('Selection cleared');
     };
 
+    const handleSmartDownload = async (filter: 'ALL' | 'UPLOADED' | 'GENERATED' | 'SELECTED', specificIds?: string[]) => {
+        let targets: ImageItem[] = [];
 
+        switch (filter) {
+            case 'ALL':
+                targets = images;
+                break;
+            case 'UPLOADED':
+                targets = images.filter(img => !img.processedUrl);
+                break;
+            case 'GENERATED':
+                targets = images.filter(img => img.processedUrl);
+                break;
+            case 'SELECTED':
+                targets = images.filter(img => (specificIds || selectedIds).includes(img.id));
+                break;
+        }
 
-    const currentLang = SUPPORTED_LANGUAGES.find(l => l.code === i18n.language) || SUPPORTED_LANGUAGES[0];
+        if (targets.length === 0) {
+            toast.error("No images found for this selection");
+            return;
+        }
+
+        toast.loading(`Preparing ${targets.length} files...`, { id: 'smart-download' });
+        const zip = new JSZip();
+        let successCount = 0;
+
+        try {
+            await Promise.all(targets.map(async (img, index) => {
+                try {
+                    let blob: Blob;
+                    let ext = img.targetFormat.split('/')[1];
+
+                    // 1. If it has a processed URL, download it directly
+                    if (img.processedUrl) {
+                        blob = await convertUrlToBlob(img.processedUrl, img.targetFormat);
+                    }
+                    // 2. If it's an uploaded original (no processedUrl), convert it
+                    else if (img.previewUrl) {
+                        let base64: string;
+                        let mimeType = img.originalMeta.type;
+
+                        if (img.file) {
+                            base64 = await fileToBase64(img.file);
+                        } else {
+                            const resp = await fetch(img.previewUrl);
+                            const blob = await resp.blob();
+                            base64 = await new Promise<string>((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+                                reader.readAsDataURL(blob);
+                            });
+                            mimeType = blob.type;
+                        }
+
+                        const conversion = await convertImageFormat(base64, img.targetFormat, mimeType);
+                        blob = conversion.blob;
+                    } else {
+                        return; // Skip invalid
+                    }
+
+                    // Naming logic
+                    let name = img.originalMeta.name.split('.')[0];
+                    if (img.customOutputName) name = img.customOutputName;
+
+                    // Add index/ID to avoid collisions in bulk
+                    if (targets.length > 1) {
+                        name = `${name}_${img.id.slice(0, 4)}`;
+                    }
+
+                    zip.file(`${name}.${ext}`, blob);
+                    successCount++;
+                } catch (e) {
+                    console.error(`Failed to process ${img.id}`, e);
+                }
+            }));
+
+            if (successCount === 0) {
+                throw new Error("No files could be prepared");
+            }
+
+            // If single file, download directly? Or always zip for consistency?
+            // User asked for bulk download logic, usually implies zip. 
+            // But if single file selected, zip might be annoying.
+            if (targets.length === 1) {
+                const content = await zip.file(Object.keys(zip.files)[0])?.async("blob");
+                if (content) {
+                    const link = document.createElement("a");
+                    link.href = URL.createObjectURL(content);
+                    link.download = Object.keys(zip.files)[0];
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            } else {
+                const content = await zip.generateAsync({ type: "blob" });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(content);
+                link.download = `BananaAI_Download_${new Date().getTime()}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            toast.dismiss('smart-download');
+            toast.success(`Downloaded ${successCount} files`);
+
+        } catch (error) {
+            console.error("Smart download failed", error);
+            toast.dismiss('smart-download');
+            toast.error("Download failed");
+        }
+    };
     const originalCount = images.filter(i => !i.duplicateIndex || i.duplicateIndex === 1).length;
     const variantCount = images.filter(i => i.duplicateIndex && i.duplicateIndex > 1).length;
 
@@ -1262,13 +1315,21 @@ const App: React.FC = () => {
                                             {t('startQueue')}
                                         </button>
 
-                                        <button onClick={downloadAllProcessed} className="bg-white hover:bg-slate-200 text-slate-950 px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all">
+                                        <button onClick={() => handleSmartDownload('ALL')} className="bg-white hover:bg-slate-200 text-slate-950 px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all">
                                             <Download className="w-5 h-5" /> Download All
+                                        </button>
+
+                                        <button onClick={() => handleSmartDownload('UPLOADED')} className="col-span-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all">
+                                            <Download className="w-4 h-4" /> Uploads Only
+                                        </button>
+
+                                        <button onClick={() => handleSmartDownload('GENERATED')} className="col-span-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all">
+                                            <Download className="w-4 h-4" /> Generated Only
                                         </button>
 
                                         {selectedIds.length > 0 && (
                                             <>
-                                                <button onClick={downloadSelected} className="col-span-2 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2">
+                                                <button onClick={() => handleSmartDownload('SELECTED', selectedIds)} className="col-span-2 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2">
                                                     <Download className="w-5 h-5" /> Download Selected ({selectedIds.length})
                                                 </button>
                                                 <button onClick={deleteSelected} className="col-span-2 bg-red-600 hover:bg-red-500 text-white px-5 py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2">
