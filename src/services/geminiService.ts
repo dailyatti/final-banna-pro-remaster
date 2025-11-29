@@ -3,30 +3,30 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AiResolution, ImageItem, AspectRatio, OutputFormat } from "../types";
 import { fileToBase64, convertImageFormat } from "./imageUtils";
 
-const MODEL_NAME = 'gemini-3-pro-image-preview'; 
+const MODEL_NAME = 'gemini-3-pro-image-preview';
 const TEXT_MODEL = 'gemini-2.5-flash';
 
-export const processImageWithGemini = async (item: ImageItem): Promise<{
+export const processImageWithGemini = async (apiKey: string, item: ImageItem): Promise<{
   processedUrl: string;
   width: number;
   height: number;
   size: number;
 }> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI(apiKey);
     const base64Data = await fileToBase64(item.file);
-    
+
     // Detect if user specifically asks for removal
     const promptLower = (item.userPrompt || "").toLowerCase();
-    const isRemovalRequested = 
-        promptLower.includes("remove text") || 
-        promptLower.includes("delete text") || 
-        promptLower.includes("no text") || 
-        promptLower.includes("felirat nélkül") || 
-        promptLower.includes("töröld");
+    const isRemovalRequested =
+      promptLower.includes("remove text") ||
+      promptLower.includes("delete text") ||
+      promptLower.includes("no text") ||
+      promptLower.includes("felirat nélkül") ||
+      promptLower.includes("töröld");
 
     let instructions = "";
-    
+
     const preservationProtocol = `
     PROTOCOL: IMMUTABLE TYPOGRAPHY & SPATIAL ANCHORING
     
@@ -45,7 +45,7 @@ export const processImageWithGemini = async (item: ImageItem): Promise<{
     `;
 
     if (isRemovalRequested) {
-        instructions = `
+      instructions = `
         ${preservationProtocol}
         
         🚨 DESTRUCTIVE OVERRIDE ACTIVE: TEXT REMOVAL REQUESTED 🚨
@@ -57,7 +57,7 @@ export const processImageWithGemini = async (item: ImageItem): Promise<{
         3. INPAINT the area with context-aware background texture to make it look like the text was never there.
         `;
     } else {
-        instructions = `
+      instructions = `
         ${preservationProtocol}
         
         USER DIRECTIVE (Creative Style): "${item.userPrompt || 'High fidelity remaster'}"
@@ -127,25 +127,26 @@ export const processImageWithGemini = async (item: ImageItem): Promise<{
 };
 
 export const generateImageFromText = async (
+  apiKey: string,
   prompt: string,
   config: { format: OutputFormat; resolution: AiResolution; aspectRatio: AspectRatio }
 ): Promise<{ processedUrl: string; width: number; height: number; size: number }> => {
   try {
-     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-     
-     const response = await ai.models.generateContent({
-       model: MODEL_NAME,
-       contents: { parts: [{ text: `Generate a high-quality image: ${prompt}` }] },
-       config: {
-         imageConfig: {
-           imageSize: config.resolution as any,
-           aspectRatio: config.aspectRatio as any,
-         },
-       },
-     });
+    const ai = new GoogleGenAI(apiKey);
 
-     let rawBase64: string | null = null;
-     let failureReason = "";
+    const response = await ai.models.generateContent({
+      model: MODEL_NAME,
+      contents: { parts: [{ text: `Generate a high-quality image: ${prompt}` }] },
+      config: {
+        imageConfig: {
+          imageSize: config.resolution as any,
+          aspectRatio: config.aspectRatio as any,
+        },
+      },
+    });
+
+    let rawBase64: string | null = null;
+    let failureReason = "";
 
     if (response.candidates && response.candidates[0].content && response.candidates[0].content.parts) {
       for (const part of response.candidates[0].content.parts) {
@@ -175,14 +176,15 @@ export const generateImageFromText = async (
 };
 
 export const processGenerativeFill = async (
+  apiKey: string,
   imageBlob: Blob,
   format: OutputFormat = OutputFormat.PNG
 ): Promise<{ processedUrl: string; width: number; height: number; size: number }> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI(apiKey);
     const buffer = await imageBlob.arrayBuffer();
     const base64Data = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-    
+
     const prompt = `
       TASK: SEAMLESS TEXTURE EXTRAPOLATION (OUTPAINTING).
       
@@ -202,7 +204,7 @@ export const processGenerativeFill = async (
       },
       config: {
         imageConfig: {
-          imageSize: '2K', 
+          imageSize: '2K',
         },
       },
     });
@@ -238,15 +240,17 @@ export const processGenerativeFill = async (
 };
 
 export const processCompositeGeneration = async (
-  images: ImageItem[], 
-  prompt: string, 
+  apiKey: string,
+  images: ImageItem[],
+  prompt: string,
   config: { format: OutputFormat; resolution: AiResolution; aspectRatio: AspectRatio }
 ): Promise<{ processedUrl: string; width: number; height: number; size: number }> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
+    const ai = new GoogleGenAI({ apiKey });
+
     const parts: any[] = [
-      { text: `
+      {
+        text: `
         TASK: COMPOSITE IMAGE MERGER.
         USER DIRECTIVE: "${prompt || 'Merge these images seamlessly.'}"
         
@@ -265,13 +269,13 @@ export const processCompositeGeneration = async (
     for (const img of batch) {
       let mimeType = img.file.type;
       let b64 = await fileToBase64(img.file);
-      
+
       if (mimeType === 'image/svg+xml') {
-          try {
-              const { blob } = await convertImageFormat(b64, OutputFormat.PNG, 'image/svg+xml');
-              b64 = await fileToBase64(new File([blob], "converted.png", { type: "image/png" }));
-              mimeType = 'image/png';
-          } catch (e) { console.warn("SVG rasterize failed", e); }
+        try {
+          const { blob } = await convertImageFormat(b64, OutputFormat.PNG, 'image/svg+xml');
+          b64 = await fileToBase64(new File([blob], "converted.png", { type: "image/png" }));
+          mimeType = 'image/png';
+        } catch (e) { console.warn("SVG rasterize failed", e); }
       }
 
       parts.push({
@@ -299,7 +303,7 @@ export const processCompositeGeneration = async (
           rawBase64 = part.inlineData.data;
           break;
         } else if (part.text) {
-           failureReason += part.text;
+          failureReason += part.text;
         }
       }
     }
@@ -320,9 +324,9 @@ export const processCompositeGeneration = async (
   }
 };
 
-export const extractTextFromImages = async (images: ImageItem[]): Promise<string> => {
+export const extractTextFromImages = async (apiKey: string, images: ImageItem[]): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI(apiKey);
     const batch = images.slice(0, 5);
     const parts: any[] = [{
       text: `
@@ -336,10 +340,10 @@ export const extractTextFromImages = async (images: ImageItem[]): Promise<string
     for (const img of batch) {
       let blob = img.file;
       if (img.processedUrl) {
-          try {
-              const r = await fetch(img.processedUrl);
-              blob = await r.blob() as File;
-          } catch (e) {}
+        try {
+          const r = await fetch(img.processedUrl);
+          blob = await r.blob() as File;
+        } catch (e) { }
       }
       const b64 = await fileToBase64(blob);
       parts.push({ inlineData: { mimeType: img.file.type, data: b64 } });
@@ -357,12 +361,14 @@ export const extractTextFromImages = async (images: ImageItem[]): Promise<string
   }
 };
 
-export const enhancePrompt = async (originalPrompt: string): Promise<string> => {
+export const enhancePrompt = async (apiKey: string, originalPrompt: string): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI(apiKey);
     const response = await ai.models.generateContent({
-        model: TEXT_MODEL,
-        contents: { parts: [{ text: `
+      model: TEXT_MODEL,
+      contents: {
+        parts: [{
+          text: `
           Act as a professional prompt engineer for AI image generation. 
           Enhance the following prompt to be more descriptive, artistic, and specific. 
           Focus on lighting, style, camera angle, and details.
@@ -370,7 +376,8 @@ export const enhancePrompt = async (originalPrompt: string): Promise<string> => 
           Original: "${originalPrompt}"
           
           Output ONLY the enhanced prompt.
-        ` }] },
+        ` }]
+      },
     });
     return response.text?.trim() || originalPrompt;
   } catch (error) {
