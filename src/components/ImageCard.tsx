@@ -143,7 +143,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
 
                     <input
                         type="checkbox"
-                        checked={item.isSelected || false}
+                        checked={isSelected || false}
                         onChange={(e) => {
                             e.stopPropagation();
                             onToggleSelection && onToggleSelection();
