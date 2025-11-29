@@ -1,8 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App'
+import App from './MainApp'
 import './index.css'
-import './services/translations' // Import i18n configuration
+import './services/i18n' // Import i18n configuration
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

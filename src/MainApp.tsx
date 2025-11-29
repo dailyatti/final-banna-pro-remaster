@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import JSZip from 'jszip';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import i18next, { SUPPORTED_LANGUAGES } from './services/translations';
+import i18next, { SUPPORTED_LANGUAGES } from './services/i18n';
 import { Toaster, toast } from 'react-hot-toast';
 
 import { ImageUploader } from './components/ImageUploader';
