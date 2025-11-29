@@ -22,7 +22,7 @@ import { useApiKey } from './context/ApiKeyContext';
 
 import { OutputFormat, AiResolution, AspectRatio, ImageItem, ProcessingStatus, NamingPattern } from './types';
 import { KEYBOARD_SHORTCUTS, ARIA_LABELS, PROMPTS } from './constants';
-import { getImageDimensions, fileToBase64, convertUrlToBlob } from './services/imageUtils';
+import { getImageDimensions, fileToBase64, convertUrlToBlob, convertImageFormat } from './services/imageUtils';
 import { processImageWithGemini, extractTextFromImages, processCompositeGeneration, processGenerativeFill, generateImageFromText } from './services/geminiService';
 import { loadSessionImages, saveSessionImages } from './services/storageService';
 
@@ -267,6 +267,80 @@ const App: React.FC = () => {
             toast('Queue cleared', { icon: '🗑️', style: { borderRadius: '10px', background: '#333', color: '#fff' } });
         } catch (e) {
             console.error("Clear queue error", e);
+        }
+    };
+
+    const handleSmartDownload = async (filter: 'ALL' | 'UPLOADED' | 'GENERATED' | 'SELECTED', selectedIds: string[] = []) => {
+        let targets = images;
+        if (filter === 'SELECTED') {
+            targets = images.filter(img => selectedIds.includes(img.id));
+        } else if (filter === 'UPLOADED') {
+            targets = images.filter(img => !img.processedUrl);
+        } else if (filter === 'GENERATED') {
+            targets = images.filter(img => !!img.processedUrl);
+        }
+
+        if (targets.length === 0) {
+            toast.error("No images match criteria");
+            return;
+        }
+
+        const toastId = toast.loading(`Preparing ${targets.length} files...`, { style: { borderRadius: '10px', background: '#333', color: '#fff' } });
+
+        try {
+            const zip = new JSZip();
+            let processedCount = 0;
+
+            for (const img of targets) {
+                let blob: Blob;
+                let ext: string;
+
+                // Determine source: Processed URL or Original File
+                if (img.processedUrl) {
+                    // It's a generated image, download directly
+                    blob = await convertUrlToBlob(img.processedUrl);
+                    ext = img.targetFormat.split('/')[1];
+                } else {
+                    // It's an uploaded image, convert to target format
+                    const base64 = await fileToBase64(img.file);
+                    const result = await convertImageFormat(base64, img.targetFormat, img.file.type);
+                    blob = result.blob;
+                    ext = img.targetFormat.split('/')[1];
+                }
+
+                const filename = img.customOutputName || img.originalMeta.name.split('.')[0];
+                // Ensure unique filenames in zip
+                const finalName = `${filename}_${img.id.slice(0, 4)}.${ext}`;
+
+                zip.file(finalName, blob);
+                processedCount++;
+            }
+
+            if (processedCount === 1) {
+                // Single file download
+                const content = await zip.file(Object.keys(zip.files)[0])?.async('blob');
+                if (content) {
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(content);
+                    link.download = Object.keys(zip.files)[0];
+                    link.click();
+                }
+            } else {
+                // Zip download
+                const content = await zip.generateAsync({ type: 'blob' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `BananaAI_Batch_${Date.now()}.zip`;
+                link.click();
+            }
+
+            toast.dismiss(toastId);
+            toast.success(`Downloaded ${processedCount} files`);
+
+        } catch (e) {
+            console.error("Download failed", e);
+            toast.dismiss(toastId);
+            toast.error("Download failed");
         }
     };
 
@@ -733,7 +807,10 @@ const App: React.FC = () => {
         if (cmd.queueAction) {
             switch (cmd.queueAction) {
                 case 'CLEAR_ALL': clearQueue(); break;
-                case 'DOWNLOAD_ZIP': downloadAllProcessed(); break;
+                case 'DOWNLOAD_ZIP': handleSmartDownload('ALL'); break;
+                case 'DOWNLOAD_UPLOADED': handleSmartDownload('UPLOADED'); break;
+                case 'DOWNLOAD_GENERATED': handleSmartDownload('GENERATED'); break;
+                case 'DOWNLOAD_SELECTED': handleSmartDownload('SELECTED', selectedIds); break;
             }
             return;
         }
@@ -1233,7 +1310,7 @@ const App: React.FC = () => {
 
                 <div className="grid grid-cols-1 gap-6">
                     <AnimatePresence>
-                        {images.map(img => (
+                        {images.map((img, index) => (
                             <ImageCard
                                 key={img.id}
                                 item={img}
@@ -1245,6 +1322,7 @@ const App: React.FC = () => {
                                 isSelected={selectedIds.includes(img.id)}
                                 onToggleSelection={() => handleSelectionToggle(img.id)}
                                 onQuickRemoveText={() => handleQuickRemoveText(img.id)}
+                                displayIndex={index + 1}
                             />
                         ))}
                     </AnimatePresence>
