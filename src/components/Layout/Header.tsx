@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { Sparkles, ChevronDown, BookOpen, Check, Settings, Key } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SUPPORTED_LANGUAGES } from '../../services/translations';
+import { SUPPORTED_LANGUAGES } from '../../services/i18n';
 import { useApiKey } from '../../context/ApiKeyContext';
 
 interface HeaderProps {
