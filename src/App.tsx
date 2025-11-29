@@ -30,8 +30,8 @@ import { Loader2, Download, Lock, Wand2, PenTool, Layers, CopyCheck, BrainCircui
 
 const App: React.FC = () => {
     const { t, i18n } = useTranslation();
-    const { apiKey, isApiKeySet, setIsApiKeySet } = useApiKey();
-    const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true);
+    const { apiKey, isKeyValid } = useApiKey();
+    // const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true); // Removed as context handles it
 
     const [images, setImages] = useState<ImageItem[]>([]);
     const [globalProcessing, setGlobalProcessing] = useState(false);
@@ -91,8 +91,8 @@ const App: React.FC = () => {
                 setIsRestored(true);
             }
         };
-        if (isApiKeySet) init();
-    }, [isApiKeySet]);
+        if (isKeyValid) init();
+    }, [isKeyValid]);
 
     // Auto-Save Session on Change
     useEffect(() => {
@@ -116,6 +116,8 @@ const App: React.FC = () => {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
+    // Key check moved to ApiKeyContext
+    /*
     useEffect(() => {
         const checkKey = async () => {
             try {
@@ -129,6 +131,7 @@ const App: React.FC = () => {
         };
         checkKey();
     }, [setIsApiKeySet]);
+    */
 
     const handleLanguageChange = (code: string) => {
         if (!code) return;
@@ -965,7 +968,7 @@ const App: React.FC = () => {
     const originalCount = images.filter(i => !i.duplicateIndex || i.duplicateIndex === 1).length;
     const variantCount = images.filter(i => i.duplicateIndex && i.duplicateIndex > 1).length;
 
-    if (isCheckingKey) return <div className="min-h-screen bg-[#020617] flex items-center justify-center"><Loader2 className="w-10 h-10 text-emerald-500 animate-spin" /></div>;
+    // if (isCheckingKey) return <div className="min-h-screen bg-[#020617] flex items-center justify-center"><Loader2 className="w-10 h-10 text-emerald-500 animate-spin" /></div>;
 
     return (
         <div className="min-h-screen text-slate-200 font-sans selection:bg-emerald-500/30 pb-20">
