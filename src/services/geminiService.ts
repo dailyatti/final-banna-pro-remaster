@@ -13,7 +13,7 @@ export const processImageWithGemini = async (apiKey: string, item: ImageItem): P
   size: number;
 }> => {
   try {
-    const ai = new GoogleGenAI(apiKey);
+    const ai = new GoogleGenAI({ apiKey });
     const base64Data = await fileToBase64(item.file);
 
     // Detect if user specifically asks for removal
@@ -132,7 +132,7 @@ export const generateImageFromText = async (
   config: { format: OutputFormat; resolution: AiResolution; aspectRatio: AspectRatio }
 ): Promise<{ processedUrl: string; width: number; height: number; size: number }> => {
   try {
-    const ai = new GoogleGenAI(apiKey);
+    const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
@@ -181,7 +181,7 @@ export const processGenerativeFill = async (
   format: OutputFormat = OutputFormat.PNG
 ): Promise<{ processedUrl: string; width: number; height: number; size: number }> => {
   try {
-    const ai = new GoogleGenAI(apiKey);
+    const ai = new GoogleGenAI({ apiKey });
     const buffer = await imageBlob.arrayBuffer();
     const base64Data = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
@@ -326,7 +326,7 @@ export const processCompositeGeneration = async (
 
 export const extractTextFromImages = async (apiKey: string, images: ImageItem[]): Promise<string> => {
   try {
-    const ai = new GoogleGenAI(apiKey);
+    const ai = new GoogleGenAI({ apiKey });
     const batch = images.slice(0, 5);
     const parts: any[] = [{
       text: `
@@ -363,7 +363,7 @@ export const extractTextFromImages = async (apiKey: string, images: ImageItem[])
 
 export const enhancePrompt = async (apiKey: string, originalPrompt: string): Promise<string> => {
   try {
-    const ai = new GoogleGenAI(apiKey);
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: TEXT_MODEL,
       contents: {
