@@ -1,56 +1,76 @@
-
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>BananaAI Remaster SaaS</title>
-    <!-- Build Timestamp: 2025-11-29T13:25:00 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
-    <style>
-      body {
-        font-family: 'Inter', sans-serif;
-        background-color: #020617; /* Slate 950 */
-        color: #f1f5f9; /* Slate 100 */
-        overflow-x: hidden;
-        background-image: 
-          radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.15) 0px, transparent 50%),
-          radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%);
-        background-attachment: fixed;
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>BananaAI Remaster SaaS</title>
+  <!-- Build Timestamp: 2025-11-29T13:25:00 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #020617;
+      /* Slate 950 */
+      color: #f1f5f9;
+      /* Slate 100 */
+      overflow-x: hidden;
+      background-image:
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #020617;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Voice Assistant Pulse */
+    .voice-pulse {
+      animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    }
+
+    @keyframes pulse-ring {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
       }
-      /* Custom Scrollbar */
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 20px rgba(16, 185, 129, 0);
       }
-      ::-webkit-scrollbar-track {
-        background: #020617;
+
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
       }
-      ::-webkit-scrollbar-thumb {
-        background: #334155;
-        border-radius: 3px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #475569;
-      }
-      /* Voice Assistant Pulse */
-      .voice-pulse {
-        animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-      }
-      @keyframes pulse-ring {
-        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-        70% { transform: scale(1); box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); }
-        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-      }
-      
-      /* Custom Selection */
-      ::selection {
-        background: rgba(16, 185, 129, 0.3);
-        color: white;
-      }
-    </style>
+    }
+
+    /* Custom Selection */
+    ::selection {
+      background: rgba(16, 185, 129, 0.3);
+      color: white;
+    }
+  </style>
   <script type="importmap">
 {
   "imports": {
@@ -72,10 +92,22 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
 </head>
-  <body>
-    <div id="root"></div>
+
+<body>
+  <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (registrations) {
+        for (let registration of registrations) {
+          registration.unregister();
+          console.log('ServiceWorker unregistered');
+        }
+      });
+    }
+  </script>
 </body>
+
 </html>
