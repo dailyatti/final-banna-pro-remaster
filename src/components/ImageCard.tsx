@@ -135,9 +135,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
                 <Trash2 className="w-4 h-4" />
             </button>
 
-            {/* Selection Checkbox */}
-            <div className="absolute top-3 left-3 z-30">
+            {/* Selection Checkbox - Enhanced Visibility */}
+            <div className="absolute top-3 left-3 z-30 group/checkbox">
                 <div className="relative flex items-center justify-center">
+                    {/* Background glow for better visibility on dark/light images */}
+                    <div className="absolute inset-0 bg-black/40 rounded-md blur-sm group-hover/checkbox:bg-black/60 transition-all"></div>
+
                     <input
                         type="checkbox"
                         checked={item.isSelected || false}
@@ -145,9 +148,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
                             e.stopPropagation();
                             onToggleSelection && onToggleSelection();
                         }}
-                        className="peer appearance-none w-5 h-5 border-2 border-slate-500 rounded bg-slate-900/50 checked:bg-indigo-500 checked:border-indigo-500 transition-all cursor-pointer"
+                        className="peer appearance-none w-6 h-6 border-2 border-slate-400 rounded-md bg-slate-900/60 backdrop-blur-sm 
+                                 checked:bg-indigo-500 checked:border-indigo-500 checked:shadow-[0_0_10px_rgba(99,102,241,0.5)]
+                                 hover:border-white hover:bg-slate-800/80
+                                 transition-all cursor-pointer relative z-10"
                     />
-                    <Check className="w-3.5 h-3.5 text-white absolute opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
+                    <Check className="w-4 h-4 text-white absolute z-20 opacity-0 peer-checked:opacity-100 pointer-events-none transition-all scale-50 peer-checked:scale-100" strokeWidth={3} />
                 </div>
             </div>
 
