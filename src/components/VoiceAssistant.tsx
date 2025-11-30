@@ -246,6 +246,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
              - Use 'playback_control' with action='RESUME' if user says "continue", "go on" after pausing.
              - Use 'playback_control' with action='STOP' if user says "stop reading completely".
              - Use 'close_assistant' if user says "close yourself", "stop listening", "bye".
+             
+             IMPORTANT: When 'read_documentation' is called, YOU (the AI) must read the provided text aloud naturally. Do not just display it.
           `;
         }
     };
@@ -635,25 +637,33 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                     ${t('guideSection5Text')}
                                     `;
 
-                                    // Use Web Speech API for controllable reading
-                                    window.speechSynthesis.cancel(); // Stop any previous
-                                    const utterance = new SpeechSynthesisUtterance(docs);
-                                    utterance.lang = currentLanguage === 'hu' ? 'hu-HU' : 'en-US';
-                                    utterance.rate = 0.9; // Slightly slower for clarity
-                                    window.speechSynthesis.speak(utterance);
-
-                                    result = { ok: true, message: "Started reading documentation via browser TTS. You can say 'Stop' to pause or 'Continue' to resume." };
+                                    // REMOVED: window.speechSynthesis (Robotic Voice)
+                                    // INSTEAD: We send the text back to Gemini and instruct it to read it.
+                                    result = {
+                                        ok: true,
+                                        message: `Here is the documentation content. PLEASE READ THIS ALOUD TO THE USER NATURALLY:\n\n${docs}`
+                                    };
                                 } else if (fc.name === 'playback_control') {
                                     const action = args.action;
                                     if (action === 'PAUSE') {
-                                        window.speechSynthesis.pause();
-                                        result = { ok: true, message: "Reading paused." };
+                                        if (audioContextRef.current && audioContextRef.current.state === 'running') {
+                                            audioContextRef.current.suspend();
+                                        }
+                                        result = { ok: true, message: "Audio output paused." };
                                     } else if (action === 'RESUME') {
-                                        window.speechSynthesis.resume();
-                                        result = { ok: true, message: "Reading resumed." };
+                                        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+                                            audioContextRef.current.resume();
+                                        }
+                                        result = { ok: true, message: "Audio output resumed." };
                                     } else if (action === 'STOP') {
-                                        window.speechSynthesis.cancel();
-                                        result = { ok: true, message: "Reading stopped." };
+                                        // To "stop", we can disconnect the source or suspend. 
+                                        // Suspending is safer to resume later, but "STOP" usually means cancel.
+                                        // For now, we'll suspend and maybe clear the buffer if possible, 
+                                        // but Gemini streams are continuous. Suspending is the best "mute" equivalent.
+                                        if (audioContextRef.current) {
+                                            audioContextRef.current.suspend();
+                                        }
+                                        result = { ok: true, message: "Audio output stopped." };
                                     } else {
                                         result = { ok: false, message: "Invalid action." };
                                     }
