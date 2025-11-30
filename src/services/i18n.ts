@@ -103,7 +103,26 @@ const resources = {
       "genAllRatios": "All Ratios (1:1, 16:9, 9:16)",
       "genAllFormats": "All Formats (JPG, PNG, WEBP)",
       "gen3Variants": "3 Variants (Same Settings)",
-      "clearQueue": "Clear Queue"
+      "clearQueue": "Clear Queue",
+      "guideTitle": "System Documentation",
+      "guideSection1Title": "1. The Remastering Engine",
+      "guideSection1Text": "BananaAI is not a simple image resizer. It utilizes the Gemini 3 Pro Vision model to conceptually understand your image and regenerate it from scratch. This allows for:",
+      "guideSection1List1": "Outpainting: Extending a square image to 16:9 by inventing new, context-aware scenery.",
+      "guideSection1List2": "Upscaling: Increasing resolution up to 4K while adding realistic textures.",
+      "guideSection1List3": "Composition Correction: Re-framing the subject for better aesthetic balance.",
+      "guideSection2Title": "2. Native Generation & Workflow",
+      "guideSection2Text1": "Non-Destructive Editing: When you process an image, the original file is preserved. The system creates a 'Variant' card for the result. You can experiment endlessly without losing source files.",
+      "guideSection2Text2": "Text-to-Image: Use the input bar below the uploader to generate high-fidelity assets from scratch using Gemini 3 Pro.",
+      "guideSection3Title": "3. Print-on-Demand (POD)",
+      "guideSection3Text": "In the Composite Generator, switch to the 'POD Templates' tab. You can merge your uploaded designs onto professional mockups (T-shirts, Mugs, Pillows) automatically. The AI handles the lighting and wrapping.",
+      "guideSection4Title": "4. Configuration",
+      "guideSection4AspectRatio": "Aspect Ratio",
+      "guideSection4AspectRatioText": "Choose 1:1 for avatars, 16:9 for cinematic wallpapers, or 9:16 for mobile social content. The AI will intelligently fill the gaps.",
+      "guideSection4Resolution": "Resolution",
+      "guideSection4ResolutionText": "Select 4K for print/high-res displays. Note that higher resolutions require more processing time (approx. 10-20s).",
+      "guideSection5Title": "5. Exporting",
+      "guideSection5Text": "Processed images are available for download in JPG, PNG, or WebP formats. The system handles the transcoding automatically after the AI generation is complete.",
+      "guideFooter": "BananaAI Remaster SaaS v2.5 • Powered by Google DeepMind"
     }
   },
   hu: {
@@ -173,7 +192,26 @@ const resources = {
       "genAllRatios": "Minden Képarány (1:1, 16:9, 9:16)",
       "genAllFormats": "Minden Formátum (JPG, PNG, WEBP)",
       "gen3Variants": "3 Variáns (Azonos)",
-      "clearQueue": "Sor Törlése"
+      "clearQueue": "Sor Törlése",
+      "guideTitle": "Rendszer Dokumentáció",
+      "guideSection1Title": "1. A Remaster Motor",
+      "guideSection1Text": "A BananaAI nem egy egyszerű átméretező. A Gemini 3 Pro Vision modellt használja, hogy fogalmi szinten megértse a képet és a nulláról újraalkossa azt. Ez lehetővé teszi:",
+      "guideSection1List1": "Képkiterjesztés (Outpainting): Négyzetes képek 16:9-re bővítése új, kontextus-helyes környezettel.",
+      "guideSection1List2": "Felbontásnövelés (Upscaling): 4K felbontás elérése valósághű textúrákkal.",
+      "guideSection1List3": "Kompozíció Javítás: A téma újrarendezése a jobb esztétikai egyensúlyért.",
+      "guideSection2Title": "2. Natív Generálás & Munkafolyamat",
+      "guideSection2Text1": "Non-Destruktív Szerkesztés: A feldolgozás során az eredeti fájl megmarad. A rendszer egy 'Variáns' kártyát hoz létre az eredménynek. Kísérletezhetsz anélkül, hogy elveszítenéd a forrásfájlokat.",
+      "guideSection2Text2": "Szövegből-Kép: Használd a feltöltő alatti sávot, hogy a Gemini 3 Pro segítségével a nulláról hozz létre nagy felbontású eszközöket.",
+      "guideSection3Title": "3. Print-on-Demand (POD)",
+      "guideSection3Text": "A Kompozit Generátorban válts a 'POD Sablonok' fülre. Feltöltött terveidet automatikusan ráillesztheted profi mockupokra (Pólók, Bögrék, Párnák). Az AI kezeli a megvilágítást és a gyűrődéseket.",
+      "guideSection4Title": "4. Konfiguráció",
+      "guideSection4AspectRatio": "Képarány",
+      "guideSection4AspectRatioText": "Válassz 1:1-et avatarokhoz, 16:9-et moziélményhez, vagy 9:16-ot mobil tartalmakhoz. Az AI intelligensen kitölti a hiányzó részeket.",
+      "guideSection4Resolution": "Felbontás",
+      "guideSection4ResolutionText": "Válassz 4K-t nyomtatáshoz. Vedd figyelembe, hogy a nagyobb felbontás több időt igényel (kb. 10-20mp).",
+      "guideSection5Title": "5. Exportálás",
+      "guideSection5Text": "A kész képek letölthetők JPG, PNG vagy WebP formátumban. A rendszer automatikusan elvégzi a konvertálást a generálás után.",
+      "guideFooter": "BananaAI Remaster SaaS v2.5 • Google DeepMind Technológia"
     }
   }
 };

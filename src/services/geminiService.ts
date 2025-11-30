@@ -178,14 +178,15 @@ export const generateImageFromText = async (
 export const processGenerativeFill = async (
   apiKey: string,
   imageBlob: Blob,
-  format: OutputFormat = OutputFormat.PNG
+  format: OutputFormat = OutputFormat.PNG,
+  customPrompt?: string
 ): Promise<{ processedUrl: string; width: number; height: number; size: number }> => {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const buffer = await imageBlob.arrayBuffer();
     const base64Data = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
-    const prompt = `
+    const prompt = customPrompt || `
       TASK: SEAMLESS TEXTURE EXTRAPOLATION (OUTPAINTING).
       
       1. VOID DETECTION: Treat white (#FFFFFF) pixels around the edge as NULL space.

@@ -348,23 +348,38 @@ const App: React.FC = () => {
         }
 
         const variantId = uuidv4();
-        const variantItem: ImageItem = {
-            ...originalItem,
-            id: variantId,
-            status: ProcessingStatus.PROCESSING,
-            duplicateIndex: (originalItem.duplicateIndex || 1) + 1,
-            originalMeta: { ...originalItem.originalMeta, name: `${originalItem.originalMeta.name} (Processed)` },
-            userPrompt: overridePrompt || originalItem.userPrompt // Use override prompt if provided
-        };
-
-        setImages(prev => {
-            const index = prev.findIndex(i => i.id === id);
-            const newArr = [...prev];
-            newArr.splice(index + 1, 0, variantItem);
-            return newArr;
-        });
 
         try {
+            // ITERATIVE GENERATION FIX: Use processed image as source if available
+            let sourceFile = originalItem.file;
+            if (originalItem.processedUrl) {
+                try {
+                    const resp = await fetch(originalItem.processedUrl);
+                    const blob = await resp.blob();
+                    sourceFile = new File([blob], `source_${Date.now()}.png`, { type: 'image/png' });
+                } catch (err) {
+                    console.warn("Failed to fetch processed image for iteration, falling back to original.", err);
+                }
+            }
+
+            const variantItem: ImageItem = {
+                ...originalItem,
+                id: variantId,
+                file: sourceFile, // Use the new source file
+                status: ProcessingStatus.PROCESSING,
+                duplicateIndex: (originalItem.duplicateIndex || 1) + 1,
+                originalMeta: { ...originalItem.originalMeta, name: `${originalItem.originalMeta.name} (Processed)` },
+                userPrompt: overridePrompt || originalItem.userPrompt,
+                processedUrl: undefined // Reset processedUrl for the new variant
+            };
+
+            setImages(prev => {
+                const index = prev.findIndex(i => i.id === id);
+                const newArr = [...prev];
+                newArr.splice(index + 1, 0, variantItem);
+                return newArr;
+            });
+
             const result = await processImageWithGemini(apiKey, variantItem);
 
             setImages(prev => prev.map(img => {
@@ -1128,7 +1143,7 @@ const App: React.FC = () => {
                         images={images}
                         onGenerate={runCompositeGeneration}
                         config={compositeConfig}
-                        onConfigChange={setCompositeConfig}
+                        onConfigChange={(updates) => setCompositeConfig(prev => ({ ...prev, ...updates }))}
                     />
                 )}
             </AnimatePresence>

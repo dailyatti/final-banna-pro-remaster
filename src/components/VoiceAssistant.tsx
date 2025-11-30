@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { Mic, MicOff, Loader2, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { ImageItem } from '../types';
 
@@ -89,6 +90,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     isNativeGenerating = false,
     modalsState = { composite: false, ocr: false, guide: false, langMenu: false }
 }) => {
+    const { t } = useTranslation();
     const [isActive, setIsActive] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
@@ -239,6 +241,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
           4. CONTEXT AWARENESS:
              - Use 'get_system_state' to see active modals or input text.
+             - Use 'read_documentation' to read the User Guide.
+             - Use 'playback_control' with action='PAUSE' if user says "stop", "wait", "hold on" while reading.
+             - Use 'playback_control' with action='RESUME' if user says "continue", "go on" after pausing.
+             - Use 'playback_control' with action='STOP' if user says "stop reading completely".
+             - Use 'close_assistant' if user says "close yourself", "stop listening", "bye".
           `;
         }
     };
@@ -433,7 +440,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
-                                action: { type: Type.STRING, enum: ['OPEN_COMPOSITE', 'CLOSE_COMPOSITE', 'OPEN_OCR', 'OPEN_DOCS', 'CHANGE_LANG', 'OPEN_LANG_MENU'] },
+                                action: { type: Type.STRING, enum: ['OPEN_COMPOSITE', 'CLOSE_COMPOSITE', 'OPEN_OCR', 'OPEN_DOCS', 'CHANGE_LANG', 'OPEN_LANG_MENU', 'CLOSE_ALL'] },
                                 value: { type: Type.STRING, description: "For CHANGE_LANG, pass the ISO code (e.g. 'hu', 'en')." }
                             }
                         }
@@ -447,6 +454,26 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                 action: { type: Type.STRING, enum: ['CLEAR_ALL', 'DOWNLOAD_ZIP'] }
                             }
                         }
+                    },
+                    {
+                        name: 'read_documentation',
+                        description: 'Reads the full system documentation/user guide.',
+                        parameters: { type: Type.OBJECT, properties: {} }
+                    },
+                    {
+                        name: 'playback_control',
+                        description: 'Controls the reading of documentation (Pause, Resume, Stop).',
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                action: { type: Type.STRING, enum: ['PAUSE', 'RESUME', 'STOP'] }
+                            }
+                        }
+                    },
+                    {
+                        name: 'close_assistant',
+                        description: 'Closes the voice assistant (stops listening).',
+                        parameters: { type: Type.OBJECT, properties: {} }
                     }
                 ]
             }];
@@ -583,6 +610,58 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                     } else {
                                         result = { ok: false, message: "Composite mode not active or handler missing." };
                                     }
+                                } else if (fc.name === 'read_documentation') {
+                                    const docs = `
+                                    ${t('guideTitle')}
+                                    
+                                    ${t('guideSection1Title')}
+                                    ${t('guideSection1Text')}
+                                    - ${t('guideSection1List1')}
+                                    - ${t('guideSection1List2')}
+                                    - ${t('guideSection1List3')}
+                                    
+                                    ${t('guideSection2Title')}
+                                    ${t('guideSection2Text1')}
+                                    ${t('guideSection2Text2')}
+                                    
+                                    ${t('guideSection3Title')}
+                                    ${t('guideSection3Text')}
+                                    
+                                    ${t('guideSection4Title')}
+                                    ${t('guideSection4AspectRatio')}: ${t('guideSection4AspectRatioText')}
+                                    ${t('guideSection4Resolution')}: ${t('guideSection4ResolutionText')}
+                                    
+                                    ${t('guideSection5Title')}
+                                    ${t('guideSection5Text')}
+                                    `;
+
+                                    // Use Web Speech API for controllable reading
+                                    window.speechSynthesis.cancel(); // Stop any previous
+                                    const utterance = new SpeechSynthesisUtterance(docs);
+                                    utterance.lang = currentLanguage === 'hu' ? 'hu-HU' : 'en-US';
+                                    utterance.rate = 0.9; // Slightly slower for clarity
+                                    window.speechSynthesis.speak(utterance);
+
+                                    result = { ok: true, message: "Started reading documentation via browser TTS. You can say 'Stop' to pause or 'Continue' to resume." };
+                                } else if (fc.name === 'playback_control') {
+                                    const action = args.action;
+                                    if (action === 'PAUSE') {
+                                        window.speechSynthesis.pause();
+                                        result = { ok: true, message: "Reading paused." };
+                                    } else if (action === 'RESUME') {
+                                        window.speechSynthesis.resume();
+                                        result = { ok: true, message: "Reading resumed." };
+                                    } else if (action === 'STOP') {
+                                        window.speechSynthesis.cancel();
+                                        result = { ok: true, message: "Reading stopped." };
+                                    } else {
+                                        result = { ok: false, message: "Invalid action." };
+                                    }
+                                } else if (fc.name === 'close_assistant') {
+                                    stopSession();
+                                    result = { ok: true, message: "Assistant closed." };
+                                    // We return early since session is stopped
+                                    return;
                                 }
 
                                 functionResponses.push({
