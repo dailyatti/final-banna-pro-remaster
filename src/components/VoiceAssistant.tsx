@@ -220,9 +220,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
           CRITICAL PROTOCOLS:
           
           1. COMPOSITE MODE (If active):
-             - Use 'manage_composite_settings' to change captions, aspect ratio, or prompt.
-             - Use 'trigger_native_generation' to START generation.
-             - Use 'manage_ui_state' -> 'CLOSE_COMPOSITE' to exit.
+              - PRIORITY: HIGH. If this mode is active, ALL image-related commands apply to the Composite Generator.
+              - Use 'manage_composite_settings' to change captions, aspect ratio, or prompt.
+              - Use 'trigger_native_generation' to START generation (it works for composite too).
+              - Use 'manage_ui_state' -> 'CLOSE_COMPOSITE' to exit.
+              - DO NOT change global settings (TextToImageBar) while in this mode.
 
           2. LANGUAGE SWITCHING (Strict ISO Codes):
              - Command: "Switch to Hungarian", "Change language to English".
@@ -636,6 +638,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                     ${t('guideSection5Title')}
                                     ${t('guideSection5Text')}
                                     `;
+
+                                    // AUTO-OPEN DOCS if not open
+                                    if (!modalsState.guide) {
+                                        onCommand({ uiAction: 'OPEN_DOCS' });
+                                    }
 
                                     // REMOVED: window.speechSynthesis (Robotic Voice)
                                     // INSTEAD: We send the text back to Gemini and instruct it to read it.
