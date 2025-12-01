@@ -215,6 +215,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                - Minden "formátum", "felbontás", "képarány" vagy "prompt" változtatást a 'update_composite_settings' eszközzel hajts végre.
                - KÉPARÁNYOK: "tizenhat kilenc" -> "16:9", "kilenc tizenhat" -> "9:16", "egy egy" -> "1:1".
                - NE használd a 'update_dashboard'-ot, ha a Kompozit ablak nyitva van!
+               - BEZÁRÁS: Ha a felhasználó be akarja zárni ("Zárd be", "X", "Mégse"), használd: 'manage_ui_state' -> 'CLOSE_COMPOSITE'.
              - HA a 'Modals Open: Composite=false':
                - Használd a 'update_dashboard'-ot a globális beállításokhoz.
 
@@ -248,6 +249,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                - Route ALL "format", "resolution", "aspect ratio", or "prompt" changes to 'update_composite_settings'.
                - ASPECT RATIOS: "sixteen by nine" -> "16:9", "nine by sixteen" -> "9:16", "one by one" -> "1:1".
                - DO NOT use 'update_dashboard' if Composite Modal is open!
+               - CLOSING: If user wants to close/cancel ("Close it", "X", "Cancel"), use: 'manage_ui_state' -> 'CLOSE_COMPOSITE'.
              - IF 'Modals Open: Composite=false':
                - Use 'update_dashboard' for global settings.
 
@@ -432,7 +434,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
-                                action: { type: Type.STRING, enum: ['OPEN_COMPOSITE', 'OPEN_OCR', 'OPEN_DOCS', 'CHANGE_LANG', 'OPEN_LANG_MENU'] },
+                                action: { type: Type.STRING, enum: ['OPEN_COMPOSITE', 'OPEN_OCR', 'OPEN_DOCS', 'CHANGE_LANG', 'OPEN_LANG_MENU', 'CLOSE_COMPOSITE', 'CLOSE_OCR', 'CLOSE_DOCS', 'CLOSE_ALL'] },
                                 value: { type: Type.STRING, description: "For CHANGE_LANG, pass the ISO code (e.g. 'hu', 'en')." }
                             }
                         }
