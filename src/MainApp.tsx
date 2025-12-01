@@ -605,12 +605,20 @@ const App: React.FC = () => {
     });
 
     // Composite State (Lifted for Voice Control)
+    const [compositeSelectedIds, setCompositeSelectedIds] = useState<Set<string>>(new Set());
     const [compositeConfig, setCompositeConfig] = useState({
         prompt: '',
         format: OutputFormat.JPG,
         resolution: AiResolution.RES_2K,
         aspectRatio: AspectRatio.SQUARE
     });
+
+    // Initialize composite selection when modal opens
+    useEffect(() => {
+        if (isCompositeModalOpen && compositeSelectedIds.size === 0) {
+            setCompositeSelectedIds(new Set(images.map(i => i.id)));
+        }
+    }, [isCompositeModalOpen, images]);
 
     // --- CENTRAL VOICE COMMAND DISPATCHER ---
     const handleVoiceCommand = (cmd: any) => {
@@ -832,29 +840,28 @@ const App: React.FC = () => {
                 if (cmd.format === 'WEBP') setBulkFormat(OutputFormat.WEBP);
             }
         }
-    };
-
-    const handleEditorSave = (newUrl: string, newBlob: Blob) => {
-        if (!editingId) return;
-        const originalItem = images.find(i => i.id === editingId);
-        if (!originalItem) return;
-        const variantId = uuidv4();
-        const newItem: ImageItem = {
-            ...originalItem,
-            id: variantId,
-            file: new File([newBlob], originalItem.originalMeta.name, { type: originalItem.originalMeta.type }),
-            previewUrl: newUrl,
-            status: ProcessingStatus.IDLE,
-            duplicateIndex: (originalItem.duplicateIndex || 1) + 1
-        };
-        setImages(prev => {
-            const index = prev.findIndex(i => i.id === editingId);
-            const newArr = [...prev];
-            newArr.splice(index + 1, 0, newItem);
-            return newArr;
-        });
-        setEditingId(null);
-        toast.success('Edited version saved as variant');
+        // 8. COMPOSITE SELECTION (NEW)
+        if (cmd.compositeSelectionAction) {
+            const action = cmd.compositeSelectionAction;
+            setCompositeSelectedIds(prev => {
+                const newSet = new Set(prev);
+                if (action === 'SELECT_ALL') {
+                    return new Set(images.map(i => i.id));
+                } else if (action === 'DESELECT_ALL') {
+                    return new Set();
+                } else if (action === 'TOGGLE_ITEM' && cmd.targetIndex) {
+                    const idx = parseInt(cmd.targetIndex) - 1;
+                    if (idx >= 0 && idx < images.length) {
+                        const id = images[idx].id;
+                        if (newSet.has(id)) newSet.delete(id);
+                        else newSet.add(id);
+                    }
+                    return newSet;
+                }
+                return prev;
+            });
+            return;
+        }
     };
 
     const handleGenerativeFill = async (blob: Blob, customPrompt?: string): Promise<string> => {
@@ -1144,6 +1151,8 @@ const App: React.FC = () => {
                         onGenerate={runCompositeGeneration}
                         config={compositeConfig}
                         onConfigChange={(updates) => setCompositeConfig(prev => ({ ...prev, ...updates }))}
+                        selectedIds={compositeSelectedIds}
+                        onSelectionChange={setCompositeSelectedIds}
                     />
                 )}
             </AnimatePresence>

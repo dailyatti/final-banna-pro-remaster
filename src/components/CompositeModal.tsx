@@ -22,6 +22,8 @@ interface CompositeModalProps {
     prompt: string,
     config: { format: OutputFormat; resolution: AiResolution; aspectRatio: AspectRatio }
   ) => void;
+  selectedIds: Set<string>;
+  onSelectionChange: (ids: Set<string>) => void;
 }
 
 export const CompositeModal: React.FC<CompositeModalProps> = ({
@@ -30,17 +32,18 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
   images,
   config,
   onConfigChange,
-  onGenerate
+  onGenerate,
+  selectedIds,
+  onSelectionChange
 }) => {
   const { t } = useTranslation();
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Select all by default when opening
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedIds(new Set(images.map(i => i.id)));
-    }
-  }, [isOpen, images]);
+  // Lifted state: selectedIds is now a prop
+  // const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Select all by default when opening - MOVED TO PARENT or handled via initial props if needed
+  // For now, we rely on parent passing correct initial state or we can useEffect here to trigger parent
+  // But better to let parent handle initialization.
 
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
@@ -49,7 +52,7 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
     } else {
       newSet.add(id);
     }
-    setSelectedIds(newSet);
+    onSelectionChange(newSet);
   };
 
   const handleGenerate = () => {
