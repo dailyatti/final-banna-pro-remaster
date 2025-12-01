@@ -632,6 +632,49 @@ const App: React.FC = () => {
             return;
         }
 
+        // --- CONTEXT AWARE REDIRECTION (COMPOSITE MODAL) ---
+        // If Composite Modal is open, redirect generic commands to it.
+        if (modals.composite) {
+            // 1. Redirect Native Input / Global Config -> Composite Config
+            if (cmd.updateNative || cmd.setGlobalConfig) {
+                const updates: any = {};
+                const source = cmd.updateNative || cmd.setGlobalConfig;
+
+                if (source.prompt) updates.prompt = source.prompt;
+                if (source.aspectRatio) updates.aspectRatio = source.aspectRatio;
+                if (source.resolution) updates.resolution = source.resolution;
+                if (source.format) {
+                    if (source.format === 'JPG') updates.format = OutputFormat.JPG;
+                    if (source.format === 'PNG') updates.format = OutputFormat.PNG;
+                    if (source.format === 'WEBP') updates.format = OutputFormat.WEBP;
+                }
+
+                if (Object.keys(updates).length > 0) {
+                    setCompositeConfig(prev => ({ ...prev, ...updates }));
+                    toast.success("Composite settings updated via Voice.");
+                }
+                return;
+            }
+
+            // 2. Redirect Native Trigger -> Composite Trigger
+            if (cmd.triggerNative) {
+                // Use currently selected IDs or all if none selected
+                const idsToUse = compositeSelectedIds.size > 0
+                    ? Array.from(compositeSelectedIds)
+                    : images.map(i => i.id);
+
+                if (idsToUse.length < 2) {
+                    toast.error("Need at least 2 images for composite.");
+                    return;
+                }
+
+                // Use current composite config, but allow overrides from command if any (unlikely for triggerNative but possible)
+                // Actually triggerNative might have params, but usually we use the state.
+                runCompositeGeneration(idsToUse, compositeConfig.prompt, compositeConfig);
+                return;
+            }
+        }
+
         // 1. TRIGGER NATIVE GEN (ATOMIC)
         if (cmd.triggerNative) {
             // CRITICAL FIX: Do not trigger native gen if Composite Modal is open
