@@ -724,6 +724,37 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                         message: `Here is the documentation content. PLEASE READ THIS ALOUD TO THE USER NATURALLY:\n\n${docs}`
                                     };
                                 } else if (fc.name === 'playback_control') {
+                                    const action = args.action;
+                                    if (action === 'PAUSE') {
+                                        if (audioContextRef.current && audioContextRef.current.state === 'running') {
+                                            audioContextRef.current.suspend();
+                                        }
+                                        result = { ok: true, message: "Paused." };
+                                    } else if (action === 'RESUME') {
+                                        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+                                            audioContextRef.current.resume();
+                                            nextStartTimeRef.current = audioContextRef.current.currentTime;
+                                        }
+                                        result = { ok: true, message: "Resumed." };
+                                    } else if (action === 'STOP') {
+                                        // Clear all queued audio
+                                        sourcesRef.current.forEach(source => {
+                                            try { source.stop(); } catch (e) { }
+                                        });
+                                        sourcesRef.current.clear();
+                                        if (audioContextRef.current) {
+                                            nextStartTimeRef.current = audioContextRef.current.currentTime;
+                                        }
+                                        // Tell model to STOP immediately
+                                        sessionPromise.then(s => s.sendRealtimeInput({ text: "[SYSTEM: User interrupted. STOP speaking immediately.]" }));
+                                        result = { ok: true, message: "Stopped." };
+                                    } else {
+                                        result = { ok: false, message: "Invalid action." };
+                                    }
+                                } else if (fc.name === 'close_assistant') {
+                                    stopSession();
+                                    result = { ok: true, message: "Assistant closed." };
+                                    return;
                                 }
 
                                 functionResponses.push({
