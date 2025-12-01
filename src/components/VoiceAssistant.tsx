@@ -291,7 +291,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                - PRIORITÁS: ABSZOLÚT. Ha ez az ablak nyitva van, MINDEN képpel kapcsolatos parancs IDE vonatkozik.
                - Ha a felhasználó azt mondja "legyen 16:9", az a KOMPOZIT képarányt állítja, NEM a főoldalit.
                - FORMÁTUM VÁLTÁS: "Legyen PNG" -> 'manage_composite_settings' format='PNG'.
-               - Ha azt mondja "mehet", "told neki", az a KOMPOZIT generálást indítja ('trigger_native_generation' vagy 'manage_composite_settings' -> start).
+               - Ha azt mondja "mehet", "told neki", az a KOMPOZIT generálást indítja ('trigger_native_generation').
                - Ha be akarja zárni ("csukd be", "tűnj el"), használd a 'manage_ui_state' -> 'CLOSE_COMPOSITE'.
                - NE nyúlj a főoldali beállításokhoz, amíg ez az ablak nyitva van!
 
@@ -450,6 +450,18 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                 resolution: { type: Type.STRING, enum: ['1K', '2K', '4K'] },
                                 format: { type: Type.STRING, enum: ['JPG', 'PNG', 'WEBP'] }
                             }
+                        }
+                    },
+                    {
+                        name: 'manage_composite_selection',
+                        description: 'Selects/Deselects images in the Composite Modal.',
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                action: { type: Type.STRING, enum: ['SELECT_ALL', 'DESELECT_ALL', 'TOGGLE_ITEM'] },
+                                targetIndex: { type: Type.STRING, description: "1-based index for TOGGLE_ITEM" }
+                            },
+                            required: ['action']
                         }
                     },
                     {
