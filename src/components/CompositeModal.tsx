@@ -292,6 +292,39 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
                 </div>
               </div>
 
+              {/* LIBRARY SELECTION */}
+              <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-300 delay-100">
+                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-emerald-400" /> Select from Library ({selectedIds.size})
+                </h3>
+
+                {images.length === 0 ? (
+                  <div className="text-center py-8 border border-dashed border-slate-800 rounded-xl bg-slate-900/30">
+                    <p className="text-slate-500 text-xs">No images in library. Upload or generate one above.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {images.map(img => {
+                      const isSelected = selectedIds.has(img.id);
+                      const displayUrl = img.processedUrl || img.previewUrl;
+
+                      return (
+                        <div
+                          key={img.id}
+                          onClick={() => toggleSelection(img.id)}
+                          className={`relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition-all group ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
+                        >
+                          <img src={displayUrl} alt="" className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`} />
+                          <div className={`absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center transition-all ${isSelected ? 'bg-emerald-500 text-white' : 'bg-slate-900/50 border border-slate-600'}`}>
+                            {isSelected && <Check className="w-2.5 h-2.5" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {selectedCategory && (
                 <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-300">
                   <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">{t('selectTemplate')}</h3>
