@@ -597,12 +597,7 @@ const App: React.FC = () => {
     };
 
     // Modals State
-    const [modals, setModals] = useState({
-        composite: false,
-        ocr: false,
-        guide: false,
-        langMenu: false
-    });
+
 
     // Composite State (Lifted for Voice Control)
     const [compositeSelectedIds, setCompositeSelectedIds] = useState<Set<string>>(new Set());
@@ -634,7 +629,8 @@ const App: React.FC = () => {
 
         // --- CONTEXT AWARE REDIRECTION (COMPOSITE MODAL) ---
         // If Composite Modal is open, redirect generic commands to it.
-        if (modals.composite) {
+        // If Composite Modal is open, redirect generic commands to it.
+        if (isCompositeModalOpen) {
             // 1. Redirect Native Input / Global Config -> Composite Config
             if (cmd.updateNative || cmd.setGlobalConfig) {
                 const updates: any = {};
@@ -669,9 +665,19 @@ const App: React.FC = () => {
                     return;
                 }
 
-                // Use current composite config, but allow overrides from command if any (unlikely for triggerNative but possible)
-                // Actually triggerNative might have params, but usually we use the state.
-                runCompositeGeneration(idsToUse, compositeConfig.prompt, compositeConfig);
+                // Update prompt if provided in the command
+                let promptToUse = compositeConfig.prompt;
+                if (cmd.prompt) {
+                    promptToUse = cmd.prompt;
+                    setCompositeConfig(prev => ({ ...prev, prompt: cmd.prompt }));
+                }
+
+                if (!promptToUse) {
+                    toast.error("Prompt cannot be empty");
+                    return;
+                }
+
+                runCompositeGeneration(idsToUse, promptToUse, { ...compositeConfig, prompt: promptToUse });
                 return;
             }
         }
@@ -679,7 +685,8 @@ const App: React.FC = () => {
         // 1. TRIGGER NATIVE GEN (ATOMIC)
         if (cmd.triggerNative) {
             // CRITICAL FIX: Do not trigger native gen if Composite Modal is open
-            if (modals.composite) {
+            // CRITICAL FIX: Do not trigger native gen if Composite Modal is open
+            if (isCompositeModalOpen) {
                 toast.error("Please close the Composite Generator first.");
                 return;
             }
