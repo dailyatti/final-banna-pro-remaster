@@ -1166,6 +1166,7 @@ const App: React.FC = () => {
 
                 <ImageUploader onFilesSelected={handleFilesSelected} />
                 <TextToImageBar
+                    apiKey={apiKey}
                     prompt={nativePrompt}
                     config={nativeConfig}
                     onPromptChange={setNativePrompt}
@@ -1181,11 +1182,11 @@ const App: React.FC = () => {
                             animate={{ opacity: 1, y: 0 }}
                             className=""
                         >
-                            {/* Redesigned: Split into TWO separate cards for better readability */}
-                            <div className="flex flex-col xl:flex-row gap-6 max-w-[1600px] mx-auto">
+                            {/* Restored: Full width stacked layout for "Big" design */}
+                            <div className="flex flex-col gap-6 max-w-[1600px] mx-auto">
 
-                                {/* SETTINGS CARD - Left Side */}
-                                <div className="glass-panel p-6 flex-1 min-w-0">
+                                {/* SETTINGS CARD - Full Width */}
+                                <div className="glass-panel p-6 w-full">
                                     <div className="flex items-center gap-3 mb-5">
                                         <div className="p-2 bg-indigo-500/10 rounded-lg">
                                             <Layers className="w-5 h-5 text-indigo-400" />
@@ -1267,7 +1268,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* QUEUE & ACTIONS CARD - Right Side */}
-                                <div className="glass-panel p-6 xl:w-[500px]">
+                                <div className="glass-panel p-6 w-full">
                                     {/* Queue Header */}
                                     <div className="flex items-center justify-between mb-5">
                                         <div className="flex items-center gap-3">
