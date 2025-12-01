@@ -432,6 +432,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             };
             updateVolume();
 
+            // @ts-ignore - Ignoring type error for callbacks as requested by user
             const sessionPromise = ai.live.connect({
                 model: 'gemini-2.5-flash-native-audio-preview-09-2025',
                 config: {
@@ -439,134 +440,131 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     systemInstruction: getSystemInstruction(),
                     responseModalities: [Modality.AUDIO],
                 },
-            });
+                callbacks: {
+                    onopen: () => {
+                        setIsActive(true);
+                        setIsConnecting(false);
 
-            sessionRef.current = sessionPromise;
-
-            const session = await sessionPromise;
-
-            // Event Listeners
-            session.on('open', () => {
-                setIsActive(true);
-                setIsConnecting(false);
-
-                // Send initial state
-                session.sendToolResponse({
-                    functionResponses: {
-                        name: 'system_state_report',
-                        id: 'init-state-' + Date.now(),
-                        response: { result: generateStateReport() }
-                    }
-                });
-
-                // Process Input Audio
-                const source = inputAudioContext.createMediaStreamSource(stream);
-                sourceRef.current = source;
-
-                // Use ScriptProcessor for capturing raw PCM
-                const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
-                processorRef.current = scriptProcessor;
-
-                scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-                    const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
-                    // Pass current hardware sample rate to the blob creator
-                    const pcmBlob = createBlob(inputData, inputAudioContext.sampleRate);
-                    session.sendRealtimeInput({ media: pcmBlob });
-                };
-
-                source.connect(scriptProcessor);
-                scriptProcessor.connect(inputAudioContext.destination);
-            });
-
-            session.on('message', async (message: LiveServerMessage) => {
-                if (message.toolCall) {
-                    setIsExecuting(true);
-                    const functionResponses = [];
-                    for (const fc of message.toolCall.functionCalls) {
-                        const args = fc.args as any;
-                        let result: { ok: boolean; message?: string } = { ok: true };
-
-                        if (fc.name === 'get_system_state') {
-                            result = { ok: true, message: generateStateReport() };
-                        }
-                        else if (fc.name === 'scroll_viewport') {
-                            onCommand({ scrollAction: args.direction });
-                            result = { ok: true, message: `Scrolled ${args.direction}` };
-                        }
-                        else if (fc.name === 'update_dashboard') {
-                            onCommand(args);
-                            result = { ok: true, message: "Dashboard updated." };
-                        } else if (fc.name === 'update_native_input') {
-                            onCommand({ updateNative: true, ...args });
-                            result = { ok: true, message: "Native input updated." };
-                        } else if (fc.name === 'trigger_native_generation') {
-                            onCommand({
-                                triggerNative: true,
-                                prompt: args.prompt,
-                                aspectRatio: args.aspectRatio,
-                                resolution: args.resolution,
-                                format: args.format
+                        // Send initial state
+                        sessionPromise.then(s => {
+                            s.sendToolResponse({
+                                functionResponses: {
+                                    name: 'system_state_report',
+                                    id: 'init-state-' + Date.now(),
+                                    response: { result: generateStateReport() }
+                                }
                             });
-                            result = { ok: true, message: "Generation started successfully." };
-                        } else if (fc.name === 'perform_item_action') {
-                            onCommand({
-                                itemAction: args.action,
-                                targetIndex: args.targetIndex
+                        }).catch(() => { });
+
+                        // Process Input Audio
+                        const source = inputAudioContext.createMediaStreamSource(stream);
+                        sourceRef.current = source;
+
+                        // Use ScriptProcessor for capturing raw PCM
+                        const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
+                        processorRef.current = scriptProcessor;
+
+                        scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+                            const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
+                            // Pass current hardware sample rate to the blob creator
+                            const pcmBlob = createBlob(inputData, inputAudioContext.sampleRate);
+                            sessionPromise.then((session) => {
+                                session.sendRealtimeInput({ media: pcmBlob });
                             });
-                            result = { ok: true, message: `Action ${args.action} performed on item ${args.targetIndex}.` };
-                        } else if (fc.name === 'apply_settings_globally') {
-                            onApplyAll();
-                            result = { ok: true, message: "Applied globally." };
-                        } else if (fc.name === 'start_processing_queue') {
-                            onCommand({ startQueue: true });
-                            result = { ok: true, message: "Queue started." };
-                        } else if (fc.name === 'analyze_images') {
-                            onAudit();
-                            result = { ok: true, message: "Audit running." };
-                        } else if (fc.name === 'request_visual_context') {
-                            sendVisualContext(session);
-                            continue;
-                        } else if (fc.name === 'manage_ui_state') {
-                            onCommand({ uiAction: args.action, value: args.value });
-                            result = { ok: true, message: `UI State updated: ${args.action} -> ${args.value}` };
-                        } else if (fc.name === 'manage_queue_actions') {
-                            onCommand({ queueAction: args.action });
-                            result = { ok: true, message: "Queue action executed." };
+                        };
+
+                        source.connect(scriptProcessor);
+                        scriptProcessor.connect(inputAudioContext.destination);
+
+                        sessionRef.current = sessionPromise;
+                    },
+                    onmessage: async (message: LiveServerMessage) => {
+                        if (message.toolCall) {
+                            setIsExecuting(true);
+                            const functionResponses = [];
+                            for (const fc of message.toolCall.functionCalls) {
+                                const args = fc.args as any;
+                                let result: { ok: boolean; message?: string } = { ok: true };
+
+                                if (fc.name === 'get_system_state') {
+                                    result = { ok: true, message: generateStateReport() };
+                                }
+                                else if (fc.name === 'scroll_viewport') {
+                                    onCommand({ scrollAction: args.direction });
+                                    result = { ok: true, message: `Scrolled ${args.direction}` };
+                                }
+                                else if (fc.name === 'update_dashboard') {
+                                    onCommand(args);
+                                    result = { ok: true, message: "Dashboard updated." };
+                                } else if (fc.name === 'update_native_input') {
+                                    onCommand({ updateNative: true, ...args });
+                                    result = { ok: true, message: "Native input updated." };
+                                } else if (fc.name === 'trigger_native_generation') {
+                                    onCommand({
+                                        triggerNative: true,
+                                        prompt: args.prompt,
+                                        aspectRatio: args.aspectRatio,
+                                        resolution: args.resolution,
+                                        format: args.format
+                                    });
+                                    result = { ok: true, message: "Generation started successfully." };
+                                } else if (fc.name === 'perform_item_action') {
+                                    onCommand({
+                                        itemAction: args.action,
+                                        targetIndex: args.targetIndex
+                                    });
+                                    result = { ok: true, message: `Action ${args.action} performed on item ${args.targetIndex}.` };
+                                } else if (fc.name === 'apply_settings_globally') {
+                                    onApplyAll();
+                                    result = { ok: true, message: "Applied globally." };
+                                } else if (fc.name === 'start_processing_queue') {
+                                    onCommand({ startQueue: true });
+                                    result = { ok: true, message: "Queue started." };
+                                } else if (fc.name === 'analyze_images') {
+                                    onAudit();
+                                    result = { ok: true, message: "Audit running." };
+                                } else if (fc.name === 'request_visual_context') {
+                                    sessionPromise.then(s => sendVisualContext(s));
+                                    continue;
+                                } else if (fc.name === 'manage_ui_state') {
+                                    onCommand({ uiAction: args.action, value: args.value });
+                                    result = { ok: true, message: `UI State updated: ${args.action} -> ${args.value}` };
+                                } else if (fc.name === 'manage_queue_actions') {
+                                    onCommand({ queueAction: args.action });
+                                    result = { ok: true, message: "Queue action executed." };
+                                }
+
+                                functionResponses.push({
+                                    id: fc.id,
+                                    name: fc.name,
+                                    response: { result }
+                                });
+                            }
+
+                            if (functionResponses.length > 0) {
+                                sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
+                            }
+                            setTimeout(() => setIsExecuting(false), 500);
                         }
 
-                        functionResponses.push({
-                            id: fc.id,
-                            name: fc.name,
-                            response: { result }
-                        });
-                    }
-
-                    if (functionResponses.length > 0) {
-                        session.sendToolResponse({ functionResponses });
-                    }
-                    setTimeout(() => setIsExecuting(false), 500);
+                        const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                        if (base64Audio) {
+                            try {
+                                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioContext.currentTime);
+                                const audioBuffer = await decodeAudioData(decode(base64Audio), audioContext, 24000, 1);
+                                const source = audioContext.createBufferSource();
+                                source.buffer = audioBuffer;
+                                source.connect(outputNode);
+                                source.start(nextStartTimeRef.current);
+                                nextStartTimeRef.current += audioBuffer.duration;
+                                sourcesRef.current.add(source);
+                                source.onended = () => sourcesRef.current.delete(source);
+                            } catch (e) { }
+                        }
+                    },
+                    onclose: stopSession,
+                    onerror: stopSession
                 }
-
-                const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                if (base64Audio) {
-                    try {
-                        nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioContext.currentTime);
-                        const audioBuffer = await decodeAudioData(decode(base64Audio), audioContext, 24000, 1);
-                        const source = audioContext.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(outputNode);
-                        source.start(nextStartTimeRef.current);
-                        nextStartTimeRef.current += audioBuffer.duration;
-                        sourcesRef.current.add(source);
-                        source.onended = () => sourcesRef.current.delete(source);
-                    } catch (e) { }
-                }
-            });
-
-            session.on('close', stopSession);
-            session.on('error', (err) => {
-                console.error(err);
-                stopSession();
             });
 
         } catch (e) {
