@@ -1452,7 +1452,15 @@ const App: React.FC = () => {
                 onCommand={handleVoiceCommand}
                 onAudit={() => setIsOCRModalOpen(true)}
                 onApplyAll={applyBulkSettings}
-                onCompositeUpdate={(updates: any) => setCompositeConfig((prev: any) => ({ ...prev, ...updates }))}
+                onCompositeUpdate={(updates: any) => {
+                    const mappedUpdates = { ...updates };
+                    if (updates.format) {
+                        if (updates.format === 'JPG') mappedUpdates.format = OutputFormat.JPG;
+                        if (updates.format === 'PNG') mappedUpdates.format = OutputFormat.PNG;
+                        if (updates.format === 'WEBP') mappedUpdates.format = OutputFormat.WEBP;
+                    }
+                    setCompositeConfig((prev: any) => ({ ...prev, ...mappedUpdates }));
+                }}
                 currentLanguage={i18n.language}
                 images={images}
                 batchCompleteTrigger={batchCompleteTrigger}
