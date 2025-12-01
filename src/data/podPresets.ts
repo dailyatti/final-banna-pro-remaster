@@ -17,8 +17,8 @@ export const POD_PRESETS: Record<string, PodPreset> = {
                 id: 'model_street',
                 label: { en: 'Model on Street', hu: 'Modell az utcán' },
                 text: {
-                    en: "A realistic, high-quality photo of a stylish model wearing a white t-shirt with the design printed on the chest. The model is walking on a sunny urban street with blurred city background. Professional fashion photography, 8k resolution, detailed fabric texture.",
-                    hu: "Egy valósághű, kiváló minőségű fotó egy stílusos modellről, aki fehér pólót visel, a mellkasán a nyomtatott mintával. A modell egy napos városi utcán sétál, elmosódott városi háttérrel. Professzionális divatfotózás, 8k felbontás, részletes szövet textúra."
+                    en: "A realistic, high-quality photo of a stylish model wearing a white t-shirt with the design printed on the chest. The model is walking on a sunny urban street with blurred city background. Professional fashion photography, 2k resolution, detailed fabric texture.",
+                    hu: "Egy valósághű, kiváló minőségű fotó egy stílusos modellről, aki fehér pólót visel, a mellkasán a nyomtatott mintával. A modell egy napos városi utcán sétál, elmosódott városi háttérrel. Professzionális divatfotózás, 2k felbontás, részletes szövet textúra."
                 }
             },
             {
