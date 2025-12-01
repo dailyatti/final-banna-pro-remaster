@@ -644,9 +644,10 @@ const App: React.FC = () => {
                 if (source.aspectRatio) updates.aspectRatio = source.aspectRatio;
                 if (source.resolution) updates.resolution = source.resolution;
                 if (source.format) {
-                    if (source.format === 'JPG') updates.format = OutputFormat.JPG;
-                    if (source.format === 'PNG') updates.format = OutputFormat.PNG;
-                    if (source.format === 'WEBP') updates.format = OutputFormat.WEBP;
+                    const fmt = source.format.toUpperCase();
+                    if (fmt === 'JPG' || fmt === 'JPEG') updates.format = OutputFormat.JPG;
+                    if (fmt === 'PNG') updates.format = OutputFormat.PNG;
+                    if (fmt === 'WEBP') updates.format = OutputFormat.WEBP;
                 }
 
                 if (Object.keys(updates).length > 0) {
@@ -1455,11 +1456,13 @@ const App: React.FC = () => {
                 onCompositeUpdate={(updates: any) => {
                     const mappedUpdates = { ...updates };
                     if (updates.format) {
-                        if (updates.format === 'JPG') mappedUpdates.format = OutputFormat.JPG;
-                        if (updates.format === 'PNG') mappedUpdates.format = OutputFormat.PNG;
-                        if (updates.format === 'WEBP') mappedUpdates.format = OutputFormat.WEBP;
+                        const fmt = updates.format.toUpperCase();
+                        if (fmt === 'JPG' || fmt === 'JPEG') mappedUpdates.format = OutputFormat.JPG;
+                        if (fmt === 'PNG') mappedUpdates.format = OutputFormat.PNG;
+                        if (fmt === 'WEBP') mappedUpdates.format = OutputFormat.WEBP;
                     }
                     setCompositeConfig((prev: any) => ({ ...prev, ...mappedUpdates }));
+                    toast.success(`Composite updated: ${Object.keys(updates).join(', ')}`);
                 }}
                 currentLanguage={i18n.language}
                 images={images}
