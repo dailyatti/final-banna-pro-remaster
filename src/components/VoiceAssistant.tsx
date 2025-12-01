@@ -724,35 +724,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                         message: `Here is the documentation content. PLEASE READ THIS ALOUD TO THE USER NATURALLY:\n\n${docs}`
                                     };
                                 } else if (fc.name === 'playback_control') {
-                                    const action = args.action;
-                                    if (action === 'PAUSE') {
-                                        if (audioContextRef.current && audioContextRef.current.state === 'running') {
-                                            audioContextRef.current.suspend();
-                                        }
-                                        result = { ok: true, message: "Audio output paused." };
-                                    } else if (action === 'RESUME') {
-                                        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-                                            audioContextRef.current.resume();
-                                        }
-                                        result = { ok: true, message: "Audio output resumed." };
-
-                                        // Reset time tracking
-                                        if (audioContextRef.current) {
-                                            nextStartTimeRef.current = audioContextRef.current.currentTime;
-                                        }
-
-                                        // Send text to model to stop it from generating more audio
-                                        sessionPromise.then(s => s.sendRealtimeInput([{ text: "[SYSTEM: User interrupted. STOP speaking immediately.]" }]));
-
-                                        result = { ok: true, message: "Audio stopped and queue cleared." };
-                                    } else {
-                                        result = { ok: false, message: "Invalid action." };
-                                    }
-                                } else if (fc.name === 'close_assistant') {
-                                    stopSession();
-                                    result = { ok: true, message: "Assistant closed." };
-                                    // We return early since session is stopped
-                                    return;
                                 }
 
                                 functionResponses.push({
