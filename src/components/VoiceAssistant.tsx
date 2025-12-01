@@ -416,14 +416,13 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     {
                         name: 'scroll_viewport',
                         description: 'Scrolls the page.',
-                        aspectRatio: { type: Type.STRING, enum: ['1:1', '16:9', '9:16', '4:3', '3:4'] },
-                        resolution: { type: Type.STRING, enum: ['1K', '2K', '4K'] },
-                        format: { type: Type.STRING, enum: ['JPG', 'PNG', 'WEBP'] },
-                        namingPattern: { type: Type.STRING, enum: ['ORIGINAL', 'RANDOM', 'SEQUENTIAL'] },
-                        prompt: { type: Type.STRING },
-                        targetIndex: { type: Type.STRING }
-                    }
-                    ,
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                direction: { type: Type.STRING, enum: ['UP', 'DOWN', 'TOP', 'BOTTOM'] }
+                            }
+                        }
+                    },
                     {
                         name: 'update_native_input',
                         description: 'Types text into the native generator bar or changes its settings.',
