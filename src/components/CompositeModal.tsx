@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Layers, Check, Sparkles, Settings2, ImageIcon } from 'lucide-react';
+import { X, Layers, Check, Sparkles, Settings2, ImageIcon, ShoppingBag, Shirt, Coffee, Smartphone, Bed, Palette, Bath } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ImageItem, OutputFormat, AiResolution, AspectRatio } from '../types';
+import { POD_PRESETS, PodPreset } from '../data/podPresets';
 
 interface CompositeConfig {
   prompt: string;
@@ -24,6 +25,10 @@ interface CompositeModalProps {
   ) => void;
   selectedIds: Set<string>;
   onSelectionChange: (ids: Set<string>) => void;
+  activeTab: 'composite' | 'pod';
+  onTabChange: (tab: 'composite' | 'pod') => void;
+  selectedCategory: string | null;
+  onCategoryChange: (category: string | null) => void;
 }
 
 export const CompositeModal: React.FC<CompositeModalProps> = ({
@@ -34,16 +39,13 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
   onConfigChange,
   onGenerate,
   selectedIds,
-  onSelectionChange
+  onSelectionChange,
+  activeTab,
+  onTabChange,
+  selectedCategory,
+  onCategoryChange
 }) => {
-  const { t } = useTranslation();
-
-  // Lifted state: selectedIds is now a prop
-  // const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // Select all by default when opening - MOVED TO PARENT or handled via initial props if needed
-  // For now, we rely on parent passing correct initial state or we can useEffect here to trigger parent
-  // But better to let parent handle initialization.
+  const { t, i18n } = useTranslation();
 
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
@@ -95,84 +97,141 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
           </button>
         </div>
 
+        {/* Tabs */}
+        <div className="flex border-b border-slate-800 bg-[#020617]">
+          <button
+            onClick={() => onTabChange('composite')}
+            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider transition-colors ${activeTab === 'composite' ? 'text-pink-500 border-b-2 border-pink-500 bg-pink-500/5' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            {t('composite')}
+          </button>
+          <button
+            onClick={() => onTabChange('pod')}
+            className={`flex-1 py-3 text-sm font-bold uppercase tracking-wider transition-colors ${activeTab === 'pod' ? 'text-blue-500 border-b-2 border-blue-500 bg-blue-500/5' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            POD Studio
+          </button>
+        </div>
+
         {/* Content */}
         <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
 
-          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><ImageIcon className="w-4 h-4" /> {t('selectImages')} ({selectedIds.size})</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-8">
-            {images.map(img => {
-              const isSelected = selectedIds.has(img.id);
-              // FIX: Use processedUrl if available to show the generated result
-              const displayUrl = img.processedUrl || img.previewUrl;
+          {activeTab === 'composite' ? (
+            <>
+              <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><ImageIcon className="w-4 h-4" /> {t('selectImages')} ({selectedIds.size})</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-8">
+                {images.map(img => {
+                  const isSelected = selectedIds.has(img.id);
+                  const displayUrl = img.processedUrl || img.previewUrl;
 
-              return (
-                <div
-                  key={img.id}
-                  onClick={() => toggleSelection(img.id)}
-                  className={`relative aspect-square rounded-xl overflow-hidden cursor-pointer border-2 transition-all group ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
-                >
-                  <img src={displayUrl} alt="" className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`} />
-                  <div className={`absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isSelected ? 'bg-emerald-500 text-white' : 'bg-slate-900/50 border border-slate-600'}`}>
-                    {isSelected && <Check className="w-3 h-3" />}
-                  </div>
-                  {/* Label to distinguish generated images */}
-                  {img.processedUrl && (
-                    <div className="absolute bottom-2 left-2 bg-purple-500/80 text-white text-[10px] px-1.5 py-0.5 rounded">
-                      AI
+                  return (
+                    <div
+                      key={img.id}
+                      onClick={() => toggleSelection(img.id)}
+                      className={`relative aspect-square rounded-xl overflow-hidden cursor-pointer border-2 transition-all group ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
+                    >
+                      <img src={displayUrl} alt="" className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`} />
+                      <div className={`absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isSelected ? 'bg-emerald-500 text-white' : 'bg-slate-900/50 border border-slate-600'}`}>
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </div>
+                      {img.processedUrl && (
+                        <div className="absolute bottom-2 left-2 bg-purple-500/80 text-white text-[10px] px-1.5 py-0.5 rounded">
+                          AI
+                        </div>
+                      )}
                     </div>
-                  )}
+                  );
+                })}
+              </div>
+
+              {/* Configuration Section */}
+              <div className="mb-6 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+                  <Settings2 className="w-4 h-4 text-pink-400" /> {t('compositeConfig')}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase">{t('format')}</label>
+                    <select
+                      value={config.format}
+                      onChange={(e) => onConfigChange({ format: e.target.value as OutputFormat })}
+                      className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-pink-500/50"
+                    >
+                      <option value={OutputFormat.JPG}>JPG</option>
+                      <option value={OutputFormat.PNG}>PNG</option>
+                      <option value={OutputFormat.WEBP}>WEBP</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase">{t('aspectRatio')}</label>
+                    <select
+                      value={config.aspectRatio}
+                      onChange={(e) => onConfigChange({ aspectRatio: e.target.value as AspectRatio })}
+                      className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-pink-500/50"
+                    >
+                      <option value={AspectRatio.SQUARE}>1:1 Square</option>
+                      <option value={AspectRatio.LANDSCAPE}>16:9 Wide</option>
+                      <option value={AspectRatio.PORTRAIT}>9:16 Tall</option>
+                      <option value={AspectRatio.STANDARD_LANDSCAPE}>4:3 Photo</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase">{t('resolution')}</label>
+                    <select
+                      value={config.resolution}
+                      onChange={(e) => onConfigChange({ resolution: e.target.value as AiResolution })}
+                      className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-pink-500/50"
+                    >
+                      <option value={AiResolution.RES_1K}>1K</option>
+                      <option value={AiResolution.RES_2K}>2K</option>
+                      <option value={AiResolution.RES_4K}>4K</option>
+                    </select>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {Object.values(POD_PRESETS).map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => onCategoryChange(preset.id)}
+                    className={`p-4 rounded-xl border flex flex-col items-center gap-2 transition-all ${selectedCategory === preset.id ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900/50 border-slate-800 text-slate-400 hover:border-slate-600 hover:text-slate-200'}`}
+                  >
+                    {preset.id === 'tshirt' && <Shirt className="w-6 h-6" />}
+                    {preset.id === 'mug' && <Coffee className="w-6 h-6" />}
+                    {preset.id === 'phone_case' && <Smartphone className="w-6 h-6" />}
+                    {preset.id === 'pillow' && <div className="w-6 h-6 border-2 border-current rounded-lg" />}
+                    {preset.id === 'canvas' && <Palette className="w-6 h-6" />}
+                    {preset.id === 'bedding' && <Bed className="w-6 h-6" />}
+                    {preset.id === 'curtain' && <Bath className="w-6 h-6" />}
+                    <span className="text-xs font-bold">{preset.label[i18n.language as 'en' | 'hu'] || preset.label.en}</span>
+                  </button>
+                ))}
+              </div>
 
-          {/* Configuration Section */}
-          <div className="mb-6 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
-            <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-pink-400" /> {t('compositeConfig')}
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-bold uppercase">{t('format')}</label>
-                <select
-                  value={config.format}
-                  onChange={(e) => onConfigChange({ format: e.target.value as OutputFormat })}
-                  className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-pink-500/50"
-                >
-                  <option value={OutputFormat.JPG}>JPG</option>
-                  <option value={OutputFormat.PNG}>PNG</option>
-                  <option value={OutputFormat.WEBP}>WEBP</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-bold uppercase">{t('aspectRatio')}</label>
-                <select
-                  value={config.aspectRatio}
-                  onChange={(e) => onConfigChange({ aspectRatio: e.target.value as AspectRatio })}
-                  className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-pink-500/50"
-                >
-                  <option value={AspectRatio.SQUARE}>1:1 Square</option>
-                  <option value={AspectRatio.LANDSCAPE}>16:9 Wide</option>
-                  <option value={AspectRatio.PORTRAIT}>9:16 Tall</option>
-                  <option value={AspectRatio.STANDARD_LANDSCAPE}>4:3 Photo</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-bold uppercase">{t('resolution')}</label>
-                <select
-                  value={config.resolution}
-                  onChange={(e) => onConfigChange({ resolution: e.target.value as AiResolution })}
-                  className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-2.5 outline-none focus:border-pink-500/50"
-                >
-                  <option value={AiResolution.RES_1K}>1K</option>
-                  <option value={AiResolution.RES_2K}>2K</option>
-                  <option value={AiResolution.RES_4K}>4K</option>
-                </select>
-              </div>
+              {selectedCategory && (
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-300">
+                  <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">{t('selectTemplate')}</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {POD_PRESETS[selectedCategory].prompts.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => onConfigChange({ prompt: p.text[i18n.language as 'en' | 'hu'] || p.text.en })}
+                        className="text-left p-4 rounded-xl bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 transition-all group"
+                      >
+                        <div className="font-bold text-slate-200 text-sm mb-1 group-hover:text-blue-400">{p.label[i18n.language as 'en' | 'hu'] || p.label.en}</div>
+                        <div className="text-xs text-slate-500 line-clamp-2">{p.text[i18n.language as 'en' | 'hu'] || p.text.en}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
 
-          <div className="space-y-2">
+          <div className="space-y-2 mt-6">
             <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">{t('compositePrompt')}</h3>
             <textarea
               value={config.prompt}
@@ -190,8 +249,8 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
           </button>
           <button
             onClick={handleGenerate}
-            disabled={selectedIds.size < 2}
-            className={`px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 shadow-lg transition-all ${selectedIds.size < 2 ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white shadow-pink-900/20'}`}
+            disabled={selectedIds.size < 1}
+            className={`px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 shadow-lg transition-all ${selectedIds.size < 1 ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white shadow-pink-900/20'}`}
           >
             <Sparkles className="w-4 h-4" /> {t('createComposite')}
           </button>

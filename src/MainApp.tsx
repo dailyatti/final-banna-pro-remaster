@@ -601,6 +601,8 @@ const App: React.FC = () => {
 
     // Composite State (Lifted for Voice Control)
     const [compositeSelectedIds, setCompositeSelectedIds] = useState<Set<string>>(new Set());
+    const [compositeTab, setCompositeTab] = useState<'composite' | 'pod'>('composite');
+    const [compositeCategory, setCompositeCategory] = useState<string | null>(null);
     const [compositeConfig, setCompositeConfig] = useState({
         prompt: '',
         format: OutputFormat.JPG,
@@ -775,7 +777,11 @@ const App: React.FC = () => {
             switch (cmd.uiAction) {
                 case 'CHANGE_LANG': handleLanguageChange(cmd.value); break;
                 case 'OPEN_LANG_MENU': setIsLangMenuOpen(true); break;
-                case 'OPEN_COMPOSITE': setIsCompositeModalOpen(true); break;
+                case 'OPEN_COMPOSITE':
+                    setIsCompositeModalOpen(true);
+                    if (cmd.tab) setCompositeTab(cmd.tab);
+                    if (cmd.category) setCompositeCategory(cmd.category);
+                    break;
                 case 'OPEN_OCR': openOCRModal(); break;
                 case 'OPEN_DOCS': setIsGuideOpen(true); break;
                 case 'CLOSE_MODAL':
@@ -1222,6 +1228,10 @@ const App: React.FC = () => {
                         onConfigChange={(updates) => setCompositeConfig(prev => ({ ...prev, ...updates }))}
                         selectedIds={compositeSelectedIds}
                         onSelectionChange={setCompositeSelectedIds}
+                        activeTab={compositeTab}
+                        onTabChange={setCompositeTab}
+                        selectedCategory={compositeCategory}
+                        onCategoryChange={setCompositeCategory}
                     />
                 )}
             </AnimatePresence>

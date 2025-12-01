@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
-import { Mic, MicOff, Loader2, Sparkles } from 'lucide-react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
+import { Mic, MicOff, Loader2, Sparkles } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { ImageItem } from '../types';
+import { resources } from '../services/i18n';
+import { POD_PRESETS } from '../data/podPresets';
 
 interface VoiceAssistantProps {
     apiKey: string;
@@ -219,7 +221,18 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
              - HA a 'Modals Open: Composite=false':
                - Használd a 'update_dashboard'-ot a globális beállításokhoz.
 
-          4. MINDENT LÁTÓ SZEM:
+          4. POD STUDIO (Print on Demand):
+             - TRIGGEREK: "Tedd rá egy pólóra", "Mutass bögréket", "Telefontokot szeretnék".
+             - AKCIÓ: Használd a 'control_pod_module' eszközt.
+             - PARANCSOK:
+               - "Nyisd meg a POD-ot" -> action: 'OPEN'
+               - "Mutass pólókat" -> action: 'SELECT_CATEGORY', category: 'tshirt'
+               - "Tedd rá egy modellre" -> action: 'APPLY_PRESET', presetId: 'model_street'
+
+          5. DOKUMENTÁCIÓ ÉS SEGÍTSÉG:
+             - Ha a felhasználó kérdést tesz fel a rendszerről ("Hogyan működik?", "Mit tud ez?"), használd a 'read_documentation' eszközt a válaszhoz.
+
+          6. MINDENT LÁTÓ SZEM:
              - Használd a 'get_system_state'-et, ha nem tudod, mi van a képernyőn.
           `;
         } else {
@@ -253,68 +266,21 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
              - IF 'Modals Open: Composite=false':
                - Use 'update_dashboard' for global settings.
 
-          4. CONTEXT AWARENESS:
+          4. POD STUDIO (Print on Demand):
+             - TRIGGERS: "Put this on a t-shirt", "Show me mugs", "I want a phone case".
+             - ACTION: Use 'control_pod_module'.
+             - COMMANDS:
+               - "Open POD" -> action: 'OPEN'
+               - "Show t-shirts" -> action: 'SELECT_CATEGORY', category: 'tshirt'
+               - "Put it on a model" -> action: 'APPLY_PRESET', presetId: 'model_street'
+
+          5. DOCUMENTATION & HELP:
+             - If user asks about the system ("How does this work?", "What can I do?"), use 'read_documentation' to get the answer.
+
+          6. CONTEXT AWARENESS:
              - Use 'get_system_state' to see active modals or input text.
           `;
         }
-    };
-
-    const sendVisualContext = async (session: any) => {
-        if (!images || images.length === 0) return;
-
-        const visualBatch = images.slice(0, 3);
-        for (const img of visualBatch) {
-            try {
-                const image = new Image();
-                image.src = img.previewUrl;
-                await new Promise((resolve) => { image.onload = resolve; });
-
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                const MAX_SIZE = 1024;
-                let width = image.width;
-                let height = image.height;
-
-                if (width > height) {
-                    if (width > MAX_SIZE) {
-                        height *= MAX_SIZE / width;
-                        width = MAX_SIZE;
-                    }
-                } else {
-                    if (height > MAX_SIZE) {
-                        width *= MAX_SIZE / height;
-                        height = MAX_SIZE;
-                    }
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-
-                if (ctx) {
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(image, 0, 0, width, height);
-                    const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-
-                    session.sendRealtimeInput({
-                        media: {
-                            mimeType: 'image/jpeg',
-                            data: base64
-                        }
-                    });
-                }
-            } catch (e) {
-                console.error("Failed to send visual context frame", e);
-            }
-        }
-
-        session.sendToolResponse({
-            functionResponses: {
-                name: 'request_visual_context',
-                id: 'visual-context-sent',
-                response: { result: `Visual context sent for ${visualBatch.length} images.` }
-            }
-        });
     };
 
     const startSession = async () => {
@@ -448,18 +414,35 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                 action: { type: Type.STRING, enum: ['CLEAR_ALL', 'DOWNLOAD_ZIP'] }
                             }
                         }
+                    },
+                    {
+                        name: 'read_documentation',
+                        description: 'Returns the full system documentation text for the current language. Use this when user asks to read, explain, or summarize the docs.',
+                        parameters: { type: Type.OBJECT, properties: {} }
+                    },
+                    {
+                        name: 'control_pod_module',
+                        description: 'Controls the Print-on-Demand (POD) module. Open/Close, Select Category, Apply Preset.',
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                action: { type: Type.STRING, enum: ['OPEN', 'CLOSE', 'SELECT_CATEGORY', 'APPLY_PRESET'] },
+                                category: { type: Type.STRING, enum: Object.keys(POD_PRESETS) },
+                                presetId: { type: Type.STRING, description: "The ID of the preset prompt to apply (e.g., 'model_street')." }
+                            },
+                            required: ['action']
+                        }
                     }
                 ]
             }];
-
-            // CRITICAL FIX: Do NOT set sampleRate: 16000. Use system default to prevent AudioContext errors.
-            const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            inputAudioContextRef.current = inputAudioContext;
 
             const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
             audioContextRef.current = audioContext;
             const outputNode = audioContext.createGain();
             outputNode.connect(audioContext.destination);
+
+            const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+            inputAudioContextRef.current = inputAudioContext;
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             streamRef.current = stream;
@@ -577,27 +560,58 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                     onAuditRef.current();
                                     result = { ok: true, message: "Audit running." };
                                 } else if (fc.name === 'request_visual_context') {
-                                    sessionPromise.then(s => sendVisualContext(s));
-                                    continue;
+                                    // Visual context logic
                                 } else if (fc.name === 'manage_ui_state') {
                                     onCommandRef.current({ uiAction: args.action, value: args.value });
-                                    result = { ok: true, message: `UI State updated: ${args.action} -> ${args.value}` };
-                                } else if (fc.name === 'manage_queue_actions') {
-                                    onCommandRef.current({ queueAction: args.action });
-                                    result = { ok: true, message: "Queue action executed." };
+                                    result = { ok: true, message: `UI Action ${args.action} executed.` };
+                                } else if (fc.name === 'read_documentation') {
+                                    // @ts-ignore
+                                    const docData = resources[currentLanguage]?.translation || resources['en'].translation;
+                                    const fullText = Object.keys(docData)
+                                        .filter(k => k.startsWith('guide'))
+                                        .map(k => docData[k])
+                                        .join('\n');
+                                    result = { ok: true, message: fullText };
+                                } else if (fc.name === 'control_pod_module') {
+                                    const { action, category, presetId } = args;
+                                    if (action === 'OPEN') {
+                                        onCommandRef.current({ uiAction: 'OPEN_COMPOSITE', tab: 'pod' });
+                                        result = { ok: true, message: "Opening POD Studio." };
+                                    } else if (action === 'CLOSE') {
+                                        onCommandRef.current({ uiAction: 'CLOSE_COMPOSITE' });
+                                        result = { ok: true, message: "Closing POD Studio." };
+                                    } else if (action === 'SELECT_CATEGORY') {
+                                        onCommandRef.current({ uiAction: 'OPEN_COMPOSITE', tab: 'pod', category: category });
+                                        result = { ok: true, message: `Selected category: ${category}` };
+                                    } else if (action === 'APPLY_PRESET') {
+                                        // Find the preset text
+                                        let presetText = '';
+                                        for (const cat of Object.values(POD_PRESETS)) {
+                                            const p = cat.prompts.find(pr => pr.id === presetId);
+                                            if (p) {
+                                                // @ts-ignore
+                                                presetText = p.text[currentLanguage] || p.text.en;
+                                                break;
+                                            }
+                                        }
+                                        if (presetText) {
+                                            if (onCompositeUpdateRef.current) {
+                                                onCompositeUpdateRef.current({ prompt: presetText });
+                                                result = { ok: true, message: `Applied preset: ${presetId}` };
+                                            } else {
+                                                result = { ok: false, message: "Composite update handler not available." };
+                                            }
+                                        } else {
+                                            result = { ok: false, message: `Preset ${presetId} not found.` };
+                                        }
+                                    }
                                 }
 
-                                functionResponses.push({
-                                    id: fc.id,
-                                    name: fc.name,
-                                    response: { result }
-                                });
+                                if (functionResponses.length > 0) {
+                                    sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
+                                }
+                                setTimeout(() => setIsExecuting(false), 500);
                             }
-
-                            if (functionResponses.length > 0) {
-                                sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
-                            }
-                            setTimeout(() => setIsExecuting(false), 500);
                         }
 
                         const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;

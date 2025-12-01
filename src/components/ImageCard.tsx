@@ -86,13 +86,24 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
     };
 
     const handleShare = async () => {
-        if (!item.processedUrl) return;
+        // Universal Share: Works for Uploaded (file) and Generated (processedUrl)
+        const fileToShare = item.file;
+        const urlToShare = item.processedUrl || item.previewUrl;
+
+        if (!fileToShare && !urlToShare) return;
 
         try {
-            const response = await fetch(item.processedUrl);
-            const blob = await response.blob();
-            const ext = item.targetFormat.split('/')[1];
-            const file = new File([blob], `image.${ext}`, { type: item.targetFormat });
+            let file: File | null = fileToShare || null;
+
+            // If we don't have the file object but have a URL (generated image), fetch it
+            if (!file && urlToShare) {
+                const response = await fetch(urlToShare);
+                const blob = await response.blob();
+                const ext = item.targetFormat.split('/')[1] || 'png';
+                file = new File([blob], `image.${ext}`, { type: item.targetFormat || 'image/png' });
+            }
+
+            if (!file) return;
 
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({
@@ -104,10 +115,11 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
             } else {
                 // Fallback to clipboard
                 try {
-                    const clipboardItem = new ClipboardItem({ [item.targetFormat]: blob });
+                    const clipboardItem = new ClipboardItem({ [file.type]: file });
                     await navigator.clipboard.write([clipboardItem]);
                     toast.success('Image copied to clipboard!', { icon: '📋', style: { borderRadius: '10px', background: '#333', color: '#fff' } });
                 } catch (err) {
+                    console.error("Clipboard write failed", err);
                     toast.error('Sharing not supported on this device', { style: { borderRadius: '10px', background: '#333', color: '#fff' } });
                 }
             }
@@ -252,7 +264,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
                     </div>
 
                     {/* Real Social Share Bar */}
-                    {isSuccess && (
+                    {(isSuccess || isIdle) && (
                         <div className="flex items-center gap-1">
                             <button onClick={handleShare} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-lg text-xs font-bold transition-all border border-slate-700 hover:border-indigo-500">
                                 <Share2 className="w-3.5 h-3.5" /> {t('share')}
