@@ -35,7 +35,7 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩' }
 ];
 
-const resources = {
+export const resources = {
   en: {
     translation: {
       "appTitle": "BananaAI Remaster",
