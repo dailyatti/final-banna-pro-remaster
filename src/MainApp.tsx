@@ -214,9 +214,20 @@ const App: React.FC = () => {
                 duplicateIndex: duplicateIndex
             });
         }
+
         setImages(prev => [...prev, ...newItems]);
+
+        if (isCompositeModalOpen) {
+            setCompositeSelectedIds(prev => {
+                const newSet = new Set(prev);
+                newItems.forEach(i => newSet.add(i.id));
+                return newSet;
+            });
+            toast.success("New images auto-selected for composition", { icon: '✨', style: { borderRadius: '10px', background: '#333', color: '#fff' } });
+        }
+
         toast.success(`${files.length} assets imported`, { id: 'import-success', style: { borderRadius: '10px', background: '#333', color: '#fff' } });
-    }, [bulkFormat, bulkRes, bulkAspect, globalPrompt]);
+    }, [bulkFormat, bulkRes, bulkAspect, globalPrompt, isCompositeModalOpen]);
 
     // Global Paste Listener
     useEffect(() => {
@@ -470,6 +481,75 @@ const App: React.FC = () => {
             // Keep prompt in box for reference
         } catch (e: any) {
             setImages(prev => prev.filter(img => img.id !== tempId));
+            toast.error("Generation failed: " + e.message);
+        } finally {
+            setIsGeneratingNative(false);
+        }
+    };
+
+    const handleNativeGenWithAutoSelect = async (prompt: string) => {
+        // Wrapper for modal use
+        setIsGeneratingNative(true);
+        const tempId = uuidv4();
+        // ... (simplified logic for modal gen)
+        // Actually, we can just call handleNativeGen but we need to know the ID to select it.
+        // handleNativeGen uses a random ID internally. 
+        // Let's copy the logic or refactor. 
+        // Refactoring handleNativeGen to return the ID is best, but risky to break other things.
+        // Let's just duplicate the core logic for the modal to ensure we get the ID.
+
+        if (!prompt || !prompt.trim()) {
+            toast.error("Prompt cannot be empty");
+            setIsGeneratingNative(false);
+            return;
+        }
+
+        toast("Generating pattern...", { icon: '🎨', duration: 2000, style: { borderRadius: '10px', background: '#333', color: '#fff' } });
+
+        const placeholder: ImageItem = {
+            id: tempId,
+            file: new File([], 'native_gen', { type: 'image/png' }),
+            previewUrl: '',
+            originalMeta: { name: 'AI Pattern', size: 0, width: 0, height: 0, type: 'image/png' },
+            targetFormat: OutputFormat.JPG,
+            targetResolution: AiResolution.RES_2K,
+            targetAspectRatio: AspectRatio.SQUARE,
+            userPrompt: prompt,
+            status: ProcessingStatus.PROCESSING
+        };
+
+        setImages(prev => [placeholder, ...prev]);
+        // Auto-select immediately
+        setCompositeSelectedIds(prev => new Set(prev).add(tempId));
+
+        try {
+            const result = await generateImageFromText(apiKey, prompt, { format: OutputFormat.JPG, resolution: AiResolution.RES_2K, aspectRatio: AspectRatio.SQUARE });
+            const resp = await fetch(result.processedUrl);
+            const blob = await resp.blob();
+            const file = new File([blob], `ai_pattern_${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+            setImages(prev => prev.map(img => {
+                if (img.id === tempId) {
+                    return {
+                        ...img,
+                        file: file,
+                        previewUrl: result.processedUrl,
+                        processedUrl: result.processedUrl,
+                        status: ProcessingStatus.SUCCESS,
+                        originalMeta: { name: `AI_Pattern_${Date.now()}`, size: result.size, width: result.width, height: result.height, type: 'image/jpeg' },
+                        processedMeta: { name: `AI_Pattern_${Date.now()}`, size: result.size, width: result.width, height: result.height, type: 'image/jpeg' }
+                    };
+                }
+                return img;
+            }));
+            toast.success("Pattern generated and selected!");
+        } catch (e: any) {
+            setImages(prev => prev.filter(img => img.id !== tempId));
+            setCompositeSelectedIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(tempId);
+                return newSet;
+            });
             toast.error("Generation failed: " + e.message);
         } finally {
             setIsGeneratingNative(false);
@@ -1232,12 +1312,11 @@ const App: React.FC = () => {
                         onTabChange={setCompositeTab}
                         selectedCategory={compositeCategory}
                         onCategoryChange={setCompositeCategory}
+                        onUpload={handleFilesSelected}
+                        onGenerateImage={handleNativeGenWithAutoSelect}
                     />
                 )}
             </AnimatePresence>
-            <AnimatePresence>{isOCRModalOpen && (<OCRSelectionModal isOpen={isOCRModalOpen} onClose={() => setIsOCRModalOpen(false)} images={images} onExtract={runOCR} />)}</AnimatePresence>
-            <AnimatePresence>{editingId && (<ImageEditor imageUrl={images.find(i => i.id === editingId)?.previewUrl || ''} onSave={handleEditorSave} onClose={() => setEditingId(null)} onGenerativeFill={handleGenerativeFill} />)}</AnimatePresence>
-
 
 
             <ApiKeyModal />

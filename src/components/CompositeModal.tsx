@@ -29,6 +29,8 @@ interface CompositeModalProps {
   onTabChange: (tab: 'composite' | 'pod') => void;
   selectedCategory: string | null;
   onCategoryChange: (category: string | null) => void;
+  onUpload?: (files: File[]) => void;
+  onGenerateImage?: (prompt: string) => Promise<void>;
 }
 
 export const CompositeModal: React.FC<CompositeModalProps> = ({
@@ -43,9 +45,33 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
   activeTab,
   onTabChange,
   selectedCategory,
-  onCategoryChange
+  onCategoryChange,
+  onUpload,
+  onGenerateImage
 }) => {
   const { t, i18n } = useTranslation();
+  const [localPrompt, setLocalPrompt] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleLocalGenerate = async () => {
+    if (!localPrompt.trim() || !onGenerateImage) return;
+    setIsGenerating(true);
+    try {
+      await onGenerateImage(localPrompt);
+      setLocalPrompt('');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && onUpload) {
+      onUpload(Array.from(e.target.files));
+    }
+  };
 
   const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
@@ -209,6 +235,61 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
                     <span className="text-xs font-bold">{preset.label[i18n.language as 'en' | 'hu'] || preset.label.en}</span>
                   </button>
                 ))}
+              </div>
+
+              {/* DESIGN SOURCE SECTION */}
+              <div className="space-y-3 animate-in fade-in slide-in-from-top-4 duration-300">
+                <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <Palette className="w-4 h-4 text-blue-400" /> Design Source
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Upload Option */}
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-slate-900/50 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800/50 rounded-xl p-4 cursor-pointer transition-all group flex flex-col items-center justify-center gap-2 text-center h-32"
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                    />
+                    <div className="p-3 bg-blue-500/10 rounded-full group-hover:scale-110 transition-transform">
+                      <ImageIcon className="w-6 h-6 text-blue-400" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-200 text-sm">Upload Image</div>
+                      <div className="text-[10px] text-slate-500">Use your own design</div>
+                    </div>
+                  </div>
+
+                  {/* Generate Option */}
+                  <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex flex-col gap-3 h-32">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-purple-400" />
+                      <span className="font-bold text-slate-200 text-sm">Generate Pattern</span>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-2">
+                      <input
+                        type="text"
+                        value={localPrompt}
+                        onChange={(e) => setLocalPrompt(e.target.value)}
+                        placeholder="E.g. Floral pattern, Cyberpunk texture..."
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 outline-none focus:border-purple-500/50"
+                        onKeyDown={(e) => e.key === 'Enter' && handleLocalGenerate()}
+                      />
+                      <button
+                        onClick={handleLocalGenerate}
+                        disabled={isGenerating || !localPrompt.trim()}
+                        className="w-full bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-bold py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1"
+                      >
+                        {isGenerating ? <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Generate'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {selectedCategory && (
