@@ -108,6 +108,19 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     // Session Management
     const sessionRef = useRef<any>(null);
 
+    // CRITICAL FIX: Use Refs for callbacks to avoid stale closures in the long-running session
+    const onCommandRef = useRef(onCommand);
+    const onAuditRef = useRef(onAudit);
+    const onApplyAllRef = useRef(onApplyAll);
+    const onCompositeUpdateRef = useRef(onCompositeUpdate);
+
+    useEffect(() => {
+        onCommandRef.current = onCommand;
+        onAuditRef.current = onAudit;
+        onApplyAllRef.current = onApplyAll;
+        onCompositeUpdateRef.current = onCompositeUpdate;
+    }, [onCommand, onAudit, onApplyAll, onCompositeUpdate]);
+
     // ANNOUNCE BATCH COMPLETION
     useEffect(() => {
         if (batchCompleteTrigger > 0 && sessionRef.current) {
@@ -200,6 +213,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
           3. KONTEXTUS ÉRZÉKELÉS (Kompozit Mód):
              - HA a 'Modals Open: Composite=true' (a rendszerállapotban):
                - Minden "formátum", "felbontás", "képarány" vagy "prompt" változtatást a 'update_composite_settings' eszközzel hajts végre.
+               - KÉPARÁNYOK: "tizenhat kilenc" -> "16:9", "kilenc tizenhat" -> "9:16", "egy egy" -> "1:1".
                - NE használd a 'update_dashboard'-ot, ha a Kompozit ablak nyitva van!
              - HA a 'Modals Open: Composite=false':
                - Használd a 'update_dashboard'-ot a globális beállításokhoz.
@@ -232,6 +246,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
           3. CONTEXT AWARENESS (Composite Mode):
              - IF 'Modals Open: Composite=true' (in system state):
                - Route ALL "format", "resolution", "aspect ratio", or "prompt" changes to 'update_composite_settings'.
+               - ASPECT RATIOS: "sixteen by nine" -> "16:9", "nine by sixteen" -> "9:16", "one by one" -> "1:1".
                - DO NOT use 'update_dashboard' if Composite Modal is open!
              - IF 'Modals Open: Composite=false':
                - Use 'update_dashboard' for global settings.
@@ -519,24 +534,24 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                     result = { ok: true, message: generateStateReport() };
                                 }
                                 else if (fc.name === 'scroll_viewport') {
-                                    onCommand({ scrollAction: args.direction });
+                                    onCommandRef.current({ scrollAction: args.direction });
                                     result = { ok: true, message: `Scrolled ${args.direction}` };
                                 }
                                 else if (fc.name === 'update_dashboard') {
-                                    onCommand(args);
+                                    onCommandRef.current(args);
                                     result = { ok: true, message: "Dashboard updated." };
                                 } else if (fc.name === 'update_composite_settings') {
-                                    if (onCompositeUpdate) {
-                                        onCompositeUpdate(args);
+                                    if (onCompositeUpdateRef.current) {
+                                        onCompositeUpdateRef.current(args);
                                         result = { ok: true, message: "Composite settings updated." };
                                     } else {
                                         result = { ok: false, message: "Composite update handler not available." };
                                     }
                                 } else if (fc.name === 'update_native_input') {
-                                    onCommand({ updateNative: true, ...args });
+                                    onCommandRef.current({ updateNative: true, ...args });
                                     result = { ok: true, message: "Native input updated." };
                                 } else if (fc.name === 'trigger_native_generation') {
-                                    onCommand({
+                                    onCommandRef.current({
                                         triggerNative: true,
                                         prompt: args.prompt,
                                         aspectRatio: args.aspectRatio,
@@ -545,28 +560,28 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                     });
                                     result = { ok: true, message: "Generation started successfully." };
                                 } else if (fc.name === 'perform_item_action') {
-                                    onCommand({
+                                    onCommandRef.current({
                                         itemAction: args.action,
                                         targetIndex: args.targetIndex
                                     });
                                     result = { ok: true, message: `Action ${args.action} performed on item ${args.targetIndex}.` };
                                 } else if (fc.name === 'apply_settings_globally') {
-                                    onApplyAll();
+                                    onApplyAllRef.current();
                                     result = { ok: true, message: "Applied globally." };
                                 } else if (fc.name === 'start_processing_queue') {
-                                    onCommand({ startQueue: true });
+                                    onCommandRef.current({ startQueue: true });
                                     result = { ok: true, message: "Queue started." };
                                 } else if (fc.name === 'analyze_images') {
-                                    onAudit();
+                                    onAuditRef.current();
                                     result = { ok: true, message: "Audit running." };
                                 } else if (fc.name === 'request_visual_context') {
                                     sessionPromise.then(s => sendVisualContext(s));
                                     continue;
                                 } else if (fc.name === 'manage_ui_state') {
-                                    onCommand({ uiAction: args.action, value: args.value });
+                                    onCommandRef.current({ uiAction: args.action, value: args.value });
                                     result = { ok: true, message: `UI State updated: ${args.action} -> ${args.value}` };
                                 } else if (fc.name === 'manage_queue_actions') {
-                                    onCommand({ queueAction: args.action });
+                                    onCommandRef.current({ queueAction: args.action });
                                     result = { ok: true, message: "Queue action executed." };
                                 }
 
