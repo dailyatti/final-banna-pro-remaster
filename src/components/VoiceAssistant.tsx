@@ -1,110 +1,176 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  FC,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Mic, MicOff, Loader2, Sparkles, X, Terminal } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { Mic, MicOff, Loader2, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
+import {
+  GoogleGenAI,
+  LiveServerMessage,
+  Modality,
+  Type,
+} from '@google/genai';
 import { ImageItem } from '../types';
 
-// --- Interfaces & Types ---
+/* -------------------------------------------------------------------------- */
+/*                                TYPE DEFINITIONS                            */
+/* -------------------------------------------------------------------------- */
 
-interface ModalsState {
+export type ScrollDirection = 'UP' | 'DOWN' | 'TOP' | 'BOTTOM';
+
+export type UiAction =
+  | 'OPEN_COMPOSITE'
+  | 'CLOSE_COMPOSITE'
+  | 'OPEN_OCR'
+  | 'OPEN_DOCS'
+  | 'CHANGE_LANG'
+  | 'OPEN_LANG_MENU'
+  | 'CLOSE_ALL';
+
+export type QueueAction = 'CLEAR_ALL' | 'DOWNLOAD_ZIP';
+
+export type ItemAction =
+  | 'REMOVE'
+  | 'EDIT'
+  | 'DOWNLOAD'
+  | 'REMASTER'
+  | 'CREATE_VARIANTS'
+  | 'SHARE';
+
+export type CompositeSelectionAction =
+  | 'SELECT_ALL'
+  | 'DESELECT_ALL'
+  | 'TOGGLE_ITEM';
+
+export interface ModalsState {
   composite: boolean;
   ocr: boolean;
   guide: boolean;
   langMenu?: boolean;
 }
 
-interface VoiceAssistantProps {
+export interface CompositeUpdatePayload {
+  prompt?: string;
+  caption?: string;
+  showCaption?: boolean;
+  aspectRatio?: '1:1' | '16:9' | '9:16';
+  resolution?: '1K' | '2K' | '4K';
+  format?: 'JPG' | 'PNG' | 'WEBP';
+}
+
+export interface VoiceAssistantCommand {
+  scrollAction?: ScrollDirection;
+
+  updateNative?: boolean;
+  triggerNative?: boolean;
+
+  startQueue?: boolean;
+  queueAction?: QueueAction;
+
+  itemAction?: ItemAction;
+  targetIndex?: string;
+
+  uiAction?: UiAction;
+  value?: string;
+
+  compositeSelectionAction?: CompositeSelectionAction;
+
+  // tetszőleges extra payload a fő app felé
+  [key: string]: any;
+}
+
+export interface VoiceAssistantProps {
   apiKey: string;
+  onCommand: (command: VoiceAssistantCommand) => void;
+  onAudit: () => void;
+  onApplyAll: () => void;
+  onCompositeUpdate?: (updates: CompositeUpdatePayload) => void;
   currentLanguage: string;
   images?: ImageItem[];
-  modalsState?: ModalsState;
   batchCompleteTrigger?: number;
   nativePrompt?: string;
   isNativeGenerating?: boolean;
-  // Callbacks
-  onCommand: (command: AssistantCommand) => void;
-  onAudit: () => void;
-  onApplyAll: () => void;
-  onCompositeUpdate?: (updates: any) => void;
+  modalsState?: ModalsState;
 }
 
-// Unified Command Interface for parent communication
-export interface AssistantCommand {
-  type?: 'UI_ACTION' | 'SCROLL' | 'UPDATE_DASHBOARD' | 'NATIVE_INPUT' | 'TRIGGER_GEN' | 'ITEM_ACTION' | 'QUEUE_ACTION';
-  uiAction?: string;
-  value?: string;
-  scrollAction?: string;
-  updateNative?: boolean;
-  prompt?: string;
-  aspectRatio?: string;
-  resolution?: string;
-  format?: string;
-  triggerNative?: boolean;
-  itemAction?: string;
-  targetIndex?: string;
-  queueAction?: string;
-  compositeSelectionAction?: string;
-  startQueue?: boolean;
-}
+/* -------------------------------------------------------------------------- */
+/*                          AUDIO HELPER FUNKCIÓK                             */
+/* -------------------------------------------------------------------------- */
 
-// --- Audio Processing Helpers ---
-
-/**
- * Decodes raw PCM 16-bit LE data from Gemini into an AudioBuffer for playback.
- */
+// PCM 16-le → AudioBuffer (Gemini audio válaszok)
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
-  sampleRate: number = 24000,
-  numChannels: number = 1
+  sampleRate: number,
+  numChannels: number,
 ): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
+  const frameCount = Math.floor(dataInt16.length / numChannels);
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
 
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      // Normalize Int16 to Float32 [-1.0, 1.0]
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+      const index = i * numChannels + channel;
+      const sample = dataInt16[index] ?? 0;
+      channelData[i] = sample / 32768.0;
     }
   }
+
   return buffer;
 }
 
-/**
- * Encodes Float32 mic audio to Base64 encoded PCM Int16 for Gemini.
- * Includes clamping to prevent clipping distortion.
- */
-function createPcmBlob(data: Float32Array, sampleRate: number): { data: string; mimeType: string } {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  
-  for (let i = 0; i < l; i++) {
-    // Clamp values between -1 and 1 before converting
-    const s = Math.max(-1, Math.min(1, data[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+// base64 → Uint8Array
+function decodeBase64(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
   }
-  
-  // Convert buffer to binary string
+  return bytes;
+}
+
+// Uint8Array → base64
+function encodeBase64(bytes: Uint8Array): string {
   let binary = '';
-  const bytes = new Uint8Array(int16.buffer);
   const len = bytes.byteLength;
   for (let i = 0; i < len; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
-  
+  return btoa(binary);
+}
+
+// Float32Array -> PCM int16 base64, dinamikus mintavételi frekvenciával
+function createPcmBlob(
+  data: Float32Array,
+  sampleRate: number,
+): { data: string; mimeType: string } {
+  const l = data.length;
+  const int16 = new Int16Array(l);
+
+  for (let i = 0; i < l; i++) {
+    // clamp – ne fussunk ki tartományból
+    const v = Math.max(-1, Math.min(1, data[i]));
+    int16[i] = v * 32767;
+  }
+
   return {
-    data: btoa(binary),
-    mimeType: `audio/pcm;rate=${sampleRate}`, // Critical: Inform API of actual hardware rate
+    data: encodeBase64(new Uint8Array(int16.buffer)),
+    mimeType: `audio/pcm;rate=${sampleRate}`,
   };
 }
 
-// --- Main Component ---
+/* -------------------------------------------------------------------------- */
+/*                              FŐ KOMPONENS                                  */
+/* -------------------------------------------------------------------------- */
 
-export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
+export const VoiceAssistant: FC<VoiceAssistantProps> = ({
   apiKey,
   onCommand,
   onAudit,
@@ -114,117 +180,278 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
   images = [],
   batchCompleteTrigger = 0,
   nativePrompt = '',
-  modalsState = { composite: false, ocr: false, guide: false, langMenu: false }
+  isNativeGenerating = false, // jelenleg nem használjuk, de jövőre jó
+  modalsState = { composite: false, ocr: false, guide: false, langMenu: false },
 }) => {
   const { t } = useTranslation();
-  
-  // State
+
+  /* ------------------------------ UI STATE -------------------------------- */
+
   const [isActive, setIsActive] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [volume, setVolume] = useState(0);
 
-  // Refs for Cleanup & Logic
+  /* --------------------------- AUDIO / SESSION REFS ----------------------- */
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const sessionRef = useRef<any>(null);
+
   const nextStartTimeRef = useRef<number>(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  const rafRef = useRef<number | null>(null);
 
-  // --- System Prompt Generation ---
-  
-  const getSystemInstruction = useMemo(() => {
+  const sessionPromiseRef = useRef<Promise<any> | null>(null);
+
+  /* ------------------------------------------------------------------------ */
+  /*                           HELPER FUNKCIÓK                               */
+  /* ------------------------------------------------------------------------ */
+
+  const generateStateReport = useCallback((): string => {
+    return `
+[SYSTEM STATE SNAPSHOT]
+- Current Interface Language: ${currentLanguage}
+- Native Gen Input: "${nativePrompt || ''}"
+- Modals Open:
+    Composite=${modalsState.composite}
+    OCR=${modalsState.ocr}
+    Docs=${modalsState.guide}
+    LangMenu=${modalsState.langMenu ?? false}
+- Images in Queue: ${images.length}
+`;
+  }, [currentLanguage, nativePrompt, modalsState, images.length]);
+
+  const getSystemInstruction = useCallback((): string => {
     const isHu = currentLanguage === 'hu';
-    // Dynamic context injection
+
     const context = modalsState.composite
-      ? (isHu ? "JELENLEG A 'COMPOSITE' (KÉPÖSSZEOLVASZTÓ) MÓDBAN VAGY. MINDEN KÉP PARANCS IDE VONATKOZIK." : "YOU ARE CURRENTLY IN 'COMPOSITE' MODE. ALL IMAGE COMMANDS APPLY HERE.")
-      : "";
+      ? isHu
+        ? "JELENLEG A 'COMPOSITE' (KÉPÖSSZEOLVASZTÓ) MÓDBAN VAGY. MINDEN KÉP PARANCS IDE VONATKOZIK."
+        : "YOU ARE CURRENTLY IN 'COMPOSITE' MODE. ALL IMAGE COMMANDS APPLY HERE."
+      : '';
 
-    // Base Prompt (Polyglot capability)
-    const basePrompt = isHu ? `
-      SZEREPLŐ: BananaAI Rendszergazda (PhD szintű, laza de profi).
-      FELADAT: A felhasználói utasítások AZONNALI végrehajtása az UI eszközökkel.
-      ${context}
+    if (isHu) {
+      return `
+SZEREPLŐ: BananaAI Rendszergazda és Profi Prompt Mérnök (PhD szintű szleng ismerettel).
+FELADAT: A felhasználói utasítások azonnali, kérdés nélküli végrehajtása.
+${context}
 
-      PARANCS SZÓTÁR:
-      - ABALKOK/MODALOK: "nyisd meg a...", "zárd be", "lépj ki", "mutasd a...". Használd: 'manage_ui_state'.
-      - GENERÁLÁS: "told neki", "mehet", "generáld", "csináld". Használd: 'trigger_native_generation'.
-      - BEZÁRÁS: "kuss", "elég", "zárj be".
+SZLENG SZÓTÁR (GENERÁLÁS, MÓDOSÍTÁS, TÖRLÉS, BEZÁRÁS, CSEND stb.) – lásd: rendszer prompt.
+(COMPOSITE mód, NYELVVÁLTÁS, KÉPGENERÁLÁS, DOKUMENTÁCIÓ OLVASÁS) – szigorú végrehajtás a megadott tool-okon keresztül.
+`;
+    }
 
-      FONTOS:
-      1. Ha a felhasználó ablakot akar nyitni/zárni (OCR, Composite, Súgó), azonnal hívd a 'manage_ui_state'-et.
-      2. Ne beszélj feleslegesen. Ha megcsináltad, elég annyi: "Megvan." vagy "Intézem."
-    ` : `
-      ROLE: BananaAI System Admin (Expert Level).
-      TASK: Execute user interface commands IMMEDIATELY.
-      ${context}
+    return `
+ROLE: BananaAI System Admin & Expert Prompt Engineer (PhD-level).
+TASK: Execute user commands IMMEDIATELY with ZERO hesitation.
+${context}
 
-      COMMAND DICTIONARY:
-      - WINDOWS/MODALS: "open...", "close...", "show me...". Use: 'manage_ui_state'.
-      - GENERATE: "do it", "generate", "make it". Use: 'trigger_native_generation'.
-      - SILENCE: "stop", "shut up".
-
-      CRITICAL:
-      1. If user wants to open/close windows (OCR, Composite, Docs), call 'manage_ui_state' immediately.
-      2. Be concise.
-    `;
-
-    return basePrompt;
+Follow the tool contracts strictly. Use manage_ui_state, trigger_native_generation, manage_queue_actions, perform_item_action, etc. to fully control the in-page UI.
+`;
   }, [currentLanguage, modalsState.composite]);
 
-  // --- Session Management ---
-
   const stopSession = useCallback(() => {
-    // 1. Close Gemini Session
-    sessionRef.current = null;
+    sessionPromiseRef.current = null;
 
-    // 2. Stop Recording Pipeline
     if (processorRef.current) {
       processorRef.current.disconnect();
+      processorRef.current.onaudioprocess = null;
       processorRef.current = null;
     }
+
     if (sourceRef.current) {
       sourceRef.current.disconnect();
       sourceRef.current = null;
     }
+
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
+
+    sourcesRef.current.forEach((source) => {
+      try {
+        source.stop();
+      } catch {
+        // ignore
+      }
+    });
+    sourcesRef.current.clear();
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+
     if (inputAudioContextRef.current) {
-      inputAudioContextRef.current.close().catch(console.error);
+      inputAudioContextRef.current.close().catch(() => {});
       inputAudioContextRef.current = null;
     }
 
-    // 3. Stop Playback Pipeline
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(console.error);
-      audioContextRef.current = null;
-    }
-    
-    // 4. Clear Queued Audio
-    sourcesRef.current.forEach(source => {
-      try { source.stop(); } catch (e) { /* ignore */ }
-    });
-    sourcesRef.current.clear();
-    
-    // 5. Reset UI State
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
     nextStartTimeRef.current = 0;
+    setVolume(0);
     setIsActive(false);
     setIsConnecting(false);
     setIsExecuting(false);
-    setVolume(0);
   }, []);
 
-  const startSession = async () => {
+  // unmount cleanup
+  useEffect(() => {
+    return () => {
+      stopSession();
+    };
+  }, [stopSession]);
+
+  /* ------------------------------------------------------------------------ */
+  /*                       GEMINI TOOLING / HANDLERS                          */
+  /* ------------------------------------------------------------------------ */
+
+  const sendVisualContext = useCallback(
+    async (session: any) => {
+      if (!images || images.length === 0) return;
+
+      const MAX_IMAGES = 3;
+      const visualBatch = images.slice(0, MAX_IMAGES);
+
+      for (const img of visualBatch) {
+        try {
+          const image = new Image();
+          image.crossOrigin = 'anonymous';
+          image.src = img.previewUrl;
+
+          await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error('Image load error'));
+          });
+
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          if (!ctx) continue;
+
+          const MAX_SIZE = 1024;
+          let { width, height } = image;
+
+          if (width > height) {
+            if (width > MAX_SIZE) {
+              height = (height * MAX_SIZE) / width;
+              width = MAX_SIZE;
+            }
+          } else {
+            if (height > MAX_SIZE) {
+              width = (width * MAX_SIZE) / height;
+              height = MAX_SIZE;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(image, 0, 0, width, height);
+
+          const base64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+
+          await session.sendRealtimeInput([
+            {
+              media: {
+                mimeType: 'image/jpeg',
+                data: base64,
+              },
+            },
+          ]);
+        } catch (e) {
+          console.error('Failed to send visual context frame', e);
+        }
+      }
+
+      await session.sendToolResponse({
+        functionResponses: [
+          {
+            name: 'request_visual_context',
+            id: `visual-context-sent-${Date.now()}`,
+            response: {
+              result: `Visual context sent for ${visualBatch.length} images.`,
+            },
+          },
+        ],
+      });
+    },
+    [images],
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /*                       BATCH COMPLETE ANNOUNCEMENT                        */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (batchCompleteTrigger <= 0 || !sessionPromiseRef.current) return;
+
+    sessionPromiseRef.current
+      .then((session) =>
+        session.sendToolResponse({
+          functionResponses: [
+            {
+              name: 'system_announcement_trigger',
+              id: `batch-complete-${Date.now()}`,
+              response: {
+                result:
+                  currentLanguage === 'hu'
+                    ? 'A kötegelt generálás befejeződött. Jelentsd be a felhasználónak.'
+                    : 'Batch processing complete. Announce this to the user.',
+              },
+            },
+          ],
+        }),
+      )
+      .catch(() => {});
+  }, [batchCompleteTrigger, currentLanguage]);
+
+  /* ------------------------------------------------------------------------ */
+  /*                        PROAKTÍV UI STATE UPDATE                          */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (!isActive || !sessionPromiseRef.current) return;
+
+    const getActiveModalLabel = (): string => {
+      if (modalsState.composite) return 'Composite (Image Mixer) Modal';
+      if (modalsState.ocr) return 'OCR (Text Extraction) Modal';
+      if (modalsState.guide) return 'User Guide / Documentation';
+      if (modalsState.langMenu) return 'Language Menu';
+      return 'Main Dashboard';
+    };
+
+    const activeModal = getActiveModalLabel();
+
+    sessionPromiseRef.current
+      .then((session) =>
+        session.sendRealtimeInput([
+          {
+            text: `[SYSTEM UPDATE: User switched view to: ${activeModal}]`,
+          },
+        ]),
+      )
+      .catch(() => {});
+  }, [modalsState, isActive]);
+
+  /* ------------------------------------------------------------------------ */
+  /*                             SESSION START                                */
+  /* ------------------------------------------------------------------------ */
+
+  const startSession = useCallback(async () => {
     if (isActive || isConnecting) return;
+
     if (!apiKey) {
-      alert("API Key missing.");
+      console.error('No API key provided to VoiceAssistant');
+      if (typeof window !== 'undefined') {
+        alert(
+          'Voice Assistant Error: No API key provided. Please check your configuration.',
+        );
+      }
       return;
     }
 
@@ -232,350 +459,775 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     try {
       const ai = new GoogleGenAI({ apiKey });
-      
-      // --- Audio Setup ---
-      // Use standard context first, allow browser to dictate sample rate
-      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      inputAudioContextRef.current = inputCtx;
-      
-      // Output context (Gemini Native usually 24k, but we decode to context rate)
-      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      audioContextRef.current = outputCtx;
-      
-      // Get Mic Stream
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: { 
-          echoCancellation: true, 
-          noiseSuppression: true,
-          autoGainControl: true
-        } 
-      });
+
+      const tools = [
+        {
+          functionDeclarations: [
+            {
+              name: 'get_system_state',
+              description:
+                'Returns the current UI state (images, modals, input text). Use this to "see" the screen.',
+              parameters: { type: Type.OBJECT, properties: {} },
+            },
+            {
+              name: 'scroll_viewport',
+              description: 'Scrolls the page.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  direction: {
+                    type: Type.STRING,
+                    enum: ['UP', 'DOWN', 'TOP', 'BOTTOM'],
+                  },
+                },
+              },
+            },
+            {
+              name: 'update_native_input',
+              description:
+                'Types text into the native generator bar or changes its settings.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  prompt: { type: Type.STRING },
+                  aspectRatio: {
+                    type: Type.STRING,
+                    enum: ['1:1', '16:9', '9:16'],
+                  },
+                  resolution: {
+                    type: Type.STRING,
+                    enum: ['1K', '2K', '4K'],
+                  },
+                  format: {
+                    type: Type.STRING,
+                    enum: ['JPG', 'PNG', 'WEBP'],
+                  },
+                },
+              },
+            },
+            {
+              name: 'manage_composite_settings',
+              description:
+                'Updates settings for the Composite (Image Mixer) mode.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  prompt: { type: Type.STRING },
+                  caption: { type: Type.STRING },
+                  showCaption: { type: Type.BOOLEAN },
+                  aspectRatio: {
+                    type: Type.STRING,
+                    enum: ['1:1', '16:9', '9:16'],
+                  },
+                  resolution: {
+                    type: Type.STRING,
+                    enum: ['1K', '2K', '4K'],
+                  },
+                  format: {
+                    type: Type.STRING,
+                    enum: ['JPG', 'PNG', 'WEBP'],
+                  },
+                },
+              },
+            },
+            {
+              name: 'manage_composite_selection',
+              description:
+                'Selects/Deselects images in the Composite Modal.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  action: {
+                    type: Type.STRING,
+                    enum: ['SELECT_ALL', 'DESELECT_ALL', 'TOGGLE_ITEM'],
+                  },
+                  targetIndex: {
+                    type: Type.STRING,
+                    description: '1-based index for TOGGLE_ITEM',
+                  },
+                },
+                required: ['action'],
+              },
+            },
+            {
+              name: 'trigger_native_generation',
+              description:
+                'Presses the generate button. Can optionally override prompt and settings immediately.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  prompt: {
+                    type: Type.STRING,
+                    description:
+                      'The FULL, professionally enhanced prompt to generate.',
+                  },
+                  aspectRatio: { type: Type.STRING },
+                  resolution: { type: Type.STRING },
+                  format: { type: Type.STRING },
+                },
+              },
+            },
+            {
+              name: 'perform_item_action',
+              description:
+                'Performs specific actions on single images in the queue.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  action: {
+                    type: Type.STRING,
+                    enum: [
+                      'REMOVE',
+                      'EDIT',
+                      'DOWNLOAD',
+                      'REMASTER',
+                      'CREATE_VARIANTS',
+                      'SHARE',
+                    ],
+                  },
+                  targetIndex: {
+                    type: Type.STRING,
+                    description: '1-based index of the image.',
+                  },
+                },
+                required: ['action', 'targetIndex'],
+              },
+            },
+            {
+              name: 'apply_settings_globally',
+              description: 'Applies global settings to all images.',
+              parameters: { type: Type.OBJECT, properties: {} },
+            },
+            {
+              name: 'start_processing_queue',
+              description: 'Starts processing all pending images.',
+              parameters: { type: Type.OBJECT, properties: {} },
+            },
+            {
+              name: 'analyze_images',
+              description: 'Runs OCR analysis.',
+              parameters: { type: Type.OBJECT, properties: {} },
+            },
+            {
+              name: 'request_visual_context',
+              description: 'Asks to SEE the images (pixels).',
+              parameters: { type: Type.OBJECT, properties: {} },
+            },
+            {
+              name: 'manage_ui_state',
+              description:
+                'Opens or closes modals, menus or CHANGES LANGUAGE.',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  action: {
+                    type: Type.STRING,
+                    enum: [
+                      'OPEN_COMPOSITE',
+                      'CLOSE_COMPOSITE',
+                      'OPEN_OCR',
+                      'OPEN_DOCS',
+                      'CHANGE_LANG',
+                      'OPEN_LANG_MENU',
+                      'CLOSE_ALL',
+                    ],
+                  },
+                  value: {
+                    type: Type.STRING,
+                    description:
+                      "For CHANGE_LANG, pass the ISO code (e.g. 'hu', 'en').",
+                  },
+                },
+              },
+            },
+            {
+              name: 'manage_queue_actions',
+              description: 'Global queue actions (Clear All, Download All).',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  action: {
+                    type: Type.STRING,
+                    enum: ['CLEAR_ALL', 'DOWNLOAD_ZIP'],
+                  },
+                },
+              },
+            },
+            {
+              name: 'read_documentation',
+              description: 'Reads the full system documentation/user guide.',
+              parameters: { type: Type.OBJECT, properties: {} },
+            },
+            {
+              name: 'playback_control',
+              description:
+                'Controls the reading of documentation (Pause, Resume, Stop).',
+              parameters: {
+                type: Type.OBJECT,
+                properties: {
+                  action: {
+                    type: Type.STRING,
+                    enum: ['PAUSE', 'RESUME', 'STOP'],
+                  },
+                },
+              },
+            },
+            {
+              name: 'close_assistant',
+              description: 'Closes the voice assistant (stops listening).',
+              parameters: { type: Type.OBJECT, properties: {} },
+            },
+          ],
+        },
+      ];
+
+      // AudioContext kompatibilitás
+      const AudioContextCtor =
+        (window as any).AudioContext ||
+        (window as any).webkitAudioContext;
+
+      const inputAudioContext = new AudioContextCtor();
+      inputAudioContextRef.current = inputAudioContext;
+
+      const outputSampleRate = 24000;
+      const audioContext = new AudioContextCtor({ sampleRate: outputSampleRate });
+      audioContextRef.current = audioContext;
+
+      const outputGain = audioContext.createGain();
+      outputGain.connect(audioContext.destination);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // Visualizer
-      const analyzer = inputCtx.createAnalyser();
-      analyzer.fftSize = 256;
-      const visSource = inputCtx.createMediaStreamSource(stream);
-      visSource.connect(analyzer);
+      // hangerő vizualizáció
+      const analyser = inputAudioContext.createAnalyser();
+      const visualizerSource = inputAudioContext.createMediaStreamSource(stream);
+      visualizerSource.connect(analyser);
 
-      const updateVol = () => {
-        if (!isActive && !isConnecting) return;
-        const data = new Uint8Array(analyzer.frequencyBinCount);
-        analyzer.getByteFrequencyData(data);
-        const avg = data.reduce((a, b) => a + b) / data.length;
+      const updateVolume = () => {
+        if (!inputAudioContextRef.current || inputAudioContextRef.current.state === 'closed') return;
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(dataArray);
+        const avg =
+          dataArray.length === 0
+            ? 0
+            : dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
         setVolume(avg);
-        rafRef.current = requestAnimationFrame(updateVol);
+        requestAnimationFrame(updateVolume);
       };
-      updateVol();
+      updateVolume();
 
-      // --- Gemini Connection ---
-      
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
         config: {
-          tools: getToolsDefinition(), // Defined below
-          systemInstruction: getSystemInstruction,
+          tools,
+          systemInstruction: getSystemInstruction(),
           responseModalities: [Modality.AUDIO],
-        }
-      });
+        },
+        callbacks: {
+          onopen: () => {
+            setIsActive(true);
+            setIsConnecting(false);
 
-      // --- Callbacks ---
+            // kezdő system state report
+            sessionPromise
+              .then((s) =>
+                s.sendToolResponse({
+                  functionResponses: [
+                    {
+                      name: 'system_state_report',
+                      id: `init-state-${Date.now()}`,
+                      response: { result: generateStateReport() },
+                    },
+                  ],
+                }),
+              )
+              .catch(() => {});
 
-      // 1. OPEN
-      (await sessionPromise).on('open', () => {
-        setIsActive(true);
-        setIsConnecting(false);
+            // mikrofonnal való input streamelése
+            const source =
+              inputAudioContext.createMediaStreamSource(stream);
+            sourceRef.current = source;
 
-        // Send initial context immediately
-        sessionRef.current.then((s: any) => {
-           sendSystemState(s);
-        });
+            const scriptProcessor =
+              inputAudioContext.createScriptProcessor(4096, 1, 1);
+            processorRef.current = scriptProcessor;
 
-        // Start Audio Pumping
-        const source = inputCtx.createMediaStreamSource(stream);
-        sourceRef.current = source;
-        
-        // Use ScriptProcessor (Legacy but reliable for raw PCM extraction in React w/o Worklet file)
-        const processor = inputCtx.createScriptProcessor(4096, 1, 1);
-        processorRef.current = processor;
+            scriptProcessor.onaudioprocess = (event) => {
+              const inputData =
+                event.inputBuffer.getChannelData(0) ?? new Float32Array(0);
+              if (!sessionPromiseRef.current) return;
 
-        processor.onaudioprocess = (e) => {
-          const inputData = e.inputBuffer.getChannelData(0);
-          // Send with ACTUAL hardware sample rate
-          const pcmBlob = createPcmBlob(inputData, inputCtx.sampleRate);
-          sessionRef.current.then((s: any) => s.sendRealtimeInput({ media: pcmBlob }));
-        };
+              const pcmBlob = createPcmBlob(
+                inputData,
+                inputAudioContext.sampleRate,
+              );
 
-        source.connect(processor);
-        processor.connect(inputCtx.destination); // Essential to keep processor alive
-      });
+              sessionPromiseRef.current
+                .then((session) =>
+                  session.sendRealtimeInput([
+                    {
+                      media: pcmBlob,
+                    },
+                  ]),
+                )
+                .catch(() => {});
+            };
 
-      // 2. MESSAGE (Audio & Tools)
-      (await sessionPromise).on('message', async (message: LiveServerMessage) => {
-        // A. Tool Handling
-        if (message.toolCall) {
-          handleToolCall(message.toolCall);
-        }
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(inputAudioContext.destination);
 
-        // B. Audio Playback
-        const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-        if (base64Audio && outputCtx) {
-          try {
-            // Ensure strictly monotonic time
-            const now = outputCtx.currentTime;
-            nextStartTimeRef.current = Math.max(nextStartTimeRef.current, now);
-            
-            const buffer = await decodeAudioData(
-              new Uint8Array(atob(base64Audio).split('').map(c => c.charCodeAt(0))), 
-              outputCtx
-            );
-            
-            const source = outputCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(outputCtx.destination);
-            source.start(nextStartTimeRef.current);
-            
-            nextStartTimeRef.current += buffer.duration;
-            sourcesRef.current.add(source);
-            source.onended = () => sourcesRef.current.delete(source);
-          } catch (err) {
-            console.error("Audio decode error", err);
-          }
-        }
-      });
-
-      // 3. CLOSE/ERROR
-      (await sessionPromise).on('close', stopSession);
-      (await sessionPromise).on('error', (err) => {
-        console.error(err);
-        stopSession();
-      });
-
-      sessionRef.current = sessionPromise;
-
-    } catch (e) {
-      console.error("Connection failed", e);
-      setIsConnecting(false);
-      alert("Could not connect to Voice Assistant.");
-    }
-  };
-
-  // --- Tool Definitions & Handling ---
-
-  const getToolsDefinition = () => [{
-    functionDeclarations: [
-      {
-        name: 'manage_ui_state',
-        description: 'Opens/Closes modals (Composite, OCR, Docs) or changes language.',
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            action: { type: Type.STRING, enum: ['OPEN_COMPOSITE', 'CLOSE_COMPOSITE', 'OPEN_OCR', 'OPEN_DOCS', 'CHANGE_LANG', 'CLOSE_ALL'] },
-            value: { type: Type.STRING, description: "Language code if needed (hu, en)" }
+            sessionPromiseRef.current = sessionPromise;
           },
-          required: ['action']
-        }
-      },
-      {
-        name: 'trigger_native_generation',
-        description: 'Triggers the main image generation.',
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            prompt: { type: Type.STRING },
-            aspectRatio: { type: Type.STRING }
-          }
-        }
-      },
-      {
-        name: 'get_system_state',
-        description: 'Reads current UI state.',
-        parameters: { type: Type.OBJECT, properties: {} }
-      },
-      {
-        name: 'close_assistant',
-        description: 'Stops the voice assistant.',
-        parameters: { type: Type.OBJECT, properties: {} }
-      }
-    ]
-  }];
 
-  const handleToolCall = async (toolCall: any) => {
-    setIsExecuting(true);
-    const functionResponses = [];
+          onmessage: async (message: LiveServerMessage) => {
+            // TOOL CALL HANDLING
+            if (message.toolCall) {
+              setIsExecuting(true);
 
-    for (const fc of toolCall.functionCalls) {
-      const { name, args, id } = fc;
-      let result = { ok: true, message: "Done" };
+              const functionResponses: Array<{
+                id: string;
+                name: string;
+                response: { result: any };
+              }> = [];
 
-      // Log for debugging
-      console.log(`[Assistant] Tool Call: ${name}`, args);
+              for (const fc of message.toolCall.functionCalls) {
+                const args: any = fc.args ?? {};
+                let result: any = { ok: true };
 
-      try {
-        switch (name) {
-          case 'manage_ui_state':
-            // Directly map API args to our unified Command interface
-            onCommand({ uiAction: args.action, value: args.value });
-            result = { ok: true, message: `Executed UI Action: ${args.action}` };
-            break;
+                try {
+                  switch (fc.name) {
+                    case 'get_system_state': {
+                      result = {
+                        ok: true,
+                        message: generateStateReport(),
+                      };
+                      break;
+                    }
 
-          case 'trigger_native_generation':
-            onCommand({ 
-              triggerNative: true, 
-              prompt: args.prompt,
-              aspectRatio: args.aspectRatio 
-            });
-            result = { ok: true, message: "Generation started." };
-            break;
+                    case 'scroll_viewport': {
+                      onCommand({ scrollAction: args.direction });
+                      result = {
+                        ok: true,
+                        message: `Scrolled ${args.direction}`,
+                      };
+                      break;
+                    }
 
-          case 'get_system_state':
-            result = { ok: true, message: JSON.stringify(modalsState) };
-            break;
+                    case 'update_native_input': {
+                      onCommand({ updateNative: true, ...args });
+                      result = {
+                        ok: true,
+                        message: 'Native input updated.',
+                      };
+                      break;
+                    }
 
-          case 'close_assistant':
+                    case 'trigger_native_generation': {
+                      onCommand({
+                        triggerNative: true,
+                        prompt: args.prompt,
+                        aspectRatio: args.aspectRatio,
+                        resolution: args.resolution,
+                        format: args.format,
+                      });
+                      result = {
+                        ok: true,
+                        message: 'Generation started successfully.',
+                      };
+                      break;
+                    }
+
+                    case 'perform_item_action': {
+                      onCommand({
+                        itemAction: args.action,
+                        targetIndex: args.targetIndex,
+                      });
+                      result = {
+                        ok: true,
+                        message: `Action ${args.action} performed on item ${args.targetIndex}.`,
+                      };
+                      break;
+                    }
+
+                    case 'apply_settings_globally': {
+                      onApplyAll();
+                      result = {
+                        ok: true,
+                        message: 'Applied globally.',
+                      };
+                      break;
+                    }
+
+                    case 'start_processing_queue': {
+                      onCommand({ startQueue: true });
+                      result = {
+                        ok: true,
+                        message: 'Queue started.',
+                      };
+                      break;
+                    }
+
+                    case 'analyze_images': {
+                      onAudit();
+                      result = {
+                        ok: true,
+                        message: 'Audit running.',
+                      };
+                      break;
+                    }
+
+                    case 'request_visual_context': {
+                      if (sessionPromiseRef.current) {
+                        sessionPromiseRef.current
+                          .then((s) => sendVisualContext(s))
+                          .catch(() => {});
+                      }
+                      // ezt külön küldjük, itt nincs azonnali result
+                      continue;
+                    }
+
+                    case 'manage_ui_state': {
+                      onCommand({
+                        uiAction: args.action as UiAction,
+                        value: args.value,
+                      });
+                      result = {
+                        ok: true,
+                        message: `UI State updated: ${args.action} -> ${args.value}`,
+                      };
+                      break;
+                    }
+
+                    case 'manage_queue_actions': {
+                      onCommand({
+                        queueAction: args.action as QueueAction,
+                      });
+                      result = {
+                        ok: true,
+                        message: 'Queue action executed.',
+                      };
+                      break;
+                    }
+
+                    case 'manage_composite_settings': {
+                      if (onCompositeUpdate) {
+                        onCompositeUpdate(args as CompositeUpdatePayload);
+                        result = {
+                          ok: true,
+                          message: 'Composite settings updated.',
+                        };
+                      } else {
+                        result = {
+                          ok: false,
+                          message:
+                            'Composite mode not active or handler missing.',
+                        };
+                      }
+                      break;
+                    }
+
+                    case 'manage_composite_selection': {
+                      onCommand({
+                        compositeSelectionAction:
+                          args.action as CompositeSelectionAction,
+                        targetIndex: args.targetIndex,
+                      });
+                      result = {
+                        ok: true,
+                        message: `Selection updated: ${args.action}`,
+                      };
+                      break;
+                    }
+
+                    case 'read_documentation': {
+                      const docs = `
+${t('guideTitle')}
+
+${t('guideSection1Title')}
+${t('guideSection1Text')}
+- ${t('guideSection1List1')}
+- ${t('guideSection1List2')}
+- ${t('guideSection1List3')}
+
+${t('guideSection2Title')}
+${t('guideSection2Text1')}
+${t('guideSection2Text2')}
+
+${t('guideSection3Title')}
+${t('guideSection3Text')}
+
+${t('guideSection4Title')}
+${t('guideSection4AspectRatio')}: ${t('guideSection4AspectRatioText')}
+${t('guideSection4Resolution')}: ${t('guideSection4ResolutionText')}
+
+${t('guideSection5Title')}
+${t('guideSection5Text')}
+`.trim();
+
+                      if (!modalsState.guide) {
+                        onCommand({ uiAction: 'OPEN_DOCS' });
+                      }
+
+                      result = {
+                        ok: true,
+                        message: `Here is the documentation content. PLEASE READ THIS ALOUD TO THE USER NATURALLY:\n\n${docs}`,
+                      };
+                      break;
+                    }
+
+                    case 'playback_control': {
+                      const action = args.action as
+                        | 'PAUSE'
+                        | 'RESUME'
+                        | 'STOP';
+
+                      if (action === 'PAUSE') {
+                        if (
+                          audioContextRef.current &&
+                          audioContextRef.current.state === 'running'
+                        ) {
+                          await audioContextRef.current.suspend();
+                        }
+                        result = { ok: true, message: 'Paused.' };
+                      } else if (action === 'RESUME') {
+                        if (
+                          audioContextRef.current &&
+                          audioContextRef.current.state === 'suspended'
+                        ) {
+                          await audioContextRef.current.resume();
+                          nextStartTimeRef.current =
+                            audioContextRef.current.currentTime;
+                        }
+                        result = { ok: true, message: 'Resumed.' };
+                      } else if (action === 'STOP') {
+                        sourcesRef.current.forEach((source) => {
+                          try {
+                            source.stop();
+                          } catch {
+                            // ignore
+                          }
+                        });
+                        sourcesRef.current.clear();
+
+                        if (audioContextRef.current) {
+                          nextStartTimeRef.current =
+                            audioContextRef.current.currentTime;
+                        }
+
+                        if (sessionPromiseRef.current) {
+                          sessionPromiseRef.current
+                            .then((s) =>
+                              s.sendRealtimeInput([
+                                {
+                                  text: '[SYSTEM: User interrupted. STOP speaking immediately.]',
+                                },
+                              ]),
+                            )
+                            .catch(() => {});
+                        }
+
+                        result = { ok: true, message: 'Stopped.' };
+                      } else {
+                        result = { ok: false, message: 'Invalid action.' };
+                      }
+                      break;
+                    }
+
+                    case 'close_assistant': {
+                      stopSession();
+                      result = { ok: true, message: 'Assistant closed.' };
+                      break;
+                    }
+
+                    default: {
+                      result = {
+                        ok: false,
+                        message: `Unknown tool: ${fc.name}`,
+                      };
+                      break;
+                    }
+                  }
+                } catch (err: any) {
+                  console.error('Tool execution error', err);
+                  result = {
+                    ok: false,
+                    message: err?.message ?? 'Tool execution error',
+                  };
+                }
+
+                functionResponses.push({
+                  id: fc.id,
+                  name: fc.name,
+                  response: { result },
+                });
+              }
+
+              if (functionResponses.length > 0 && sessionPromiseRef.current) {
+                sessionPromiseRef.current
+                  .then((s) => s.sendToolResponse({ functionResponses }))
+                  .catch(() => {});
+              }
+
+              setTimeout(() => setIsExecuting(false), 400);
+            }
+
+            // AUDIO VÁLASZ LEJÁTSZÁS
+            const base64Audio =
+              message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+
+            if (base64Audio && audioContextRef.current) {
+              try {
+                const audioContext = audioContextRef.current;
+                nextStartTimeRef.current = Math.max(
+                  nextStartTimeRef.current,
+                  audioContext.currentTime,
+                );
+
+                const audioBuffer = await decodeAudioData(
+                  decodeBase64(base64Audio),
+                  audioContext,
+                  outputSampleRate,
+                  1,
+                );
+
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(outputGain);
+                source.start(nextStartTimeRef.current);
+                nextStartTimeRef.current += audioBuffer.duration;
+
+                sourcesRef.current.add(source);
+                source.onended = () => {
+                  sourcesRef.current.delete(source);
+                };
+              } catch (err) {
+                console.error('Error playing TTS audio', err);
+              }
+            }
+          },
+
+          onclose: () => {
             stopSession();
-            result = { ok: true, message: "Goodbye." };
-            break;
-            
-          default:
-            result = { ok: false, message: "Unknown tool" };
-        }
-      } catch (e) {
-        result = { ok: false, message: "Error executing command" };
+          },
+
+          onerror: (err: any) => {
+            console.error('Voice assistant error', err);
+            if (typeof window !== 'undefined') {
+              alert('Voice Assistant Error: ' + (err?.message ?? String(err)));
+            }
+            stopSession();
+          },
+        },
+      });
+
+      sessionPromiseRef.current = sessionPromise;
+    } catch (e: any) {
+      console.error(e);
+      setIsConnecting(false);
+      if (typeof window !== 'undefined') {
+        alert('Voice Assistant Error: ' + (e?.message ?? String(e)));
       }
-
-      functionResponses.push({
-        id,
-        name,
-        response: { result }
-      });
+      stopSession();
     }
+  }, [
+    apiKey,
+    generateStateReport,
+    getSystemInstruction,
+    onCommand,
+    onApplyAll,
+    onAudit,
+    onCompositeUpdate,
+    sendVisualContext,
+    stopSession,
+    isActive,
+    isConnecting,
+    modalsState.guide,
+    t,
+  ]);
 
-    // Send response back to Gemini
-    if (sessionRef.current && functionResponses.length > 0) {
-      sessionRef.current.then((s: any) => s.sendToolResponse({ functionResponses }));
-    }
-    
-    setTimeout(() => setIsExecuting(false), 600);
-  };
+  /* ------------------------------------------------------------------------ */
+  /*                             RENDER (PORTAL)                              */
+  /* ------------------------------------------------------------------------ */
 
-  const sendSystemState = (session: any) => {
-    session.sendRealtimeInput([{ 
-      text: `[SYSTEM STATE UPDATE: Modals Open: ${JSON.stringify(modalsState)}. Current Language: ${currentLanguage}. Images Loaded: ${images.length}]` 
-    }]);
-  };
-
-  // --- React Effects ---
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => stopSession();
-  }, [stopSession]);
-
-  // Watch for Modal changes to inform AI implicitly
-  useEffect(() => {
-    if (isActive && sessionRef.current) {
-      sessionRef.current.then((s: any) => sendSystemState(s));
-    }
-  }, [modalsState, isActive]);
-
-  // Batch Completion Trigger
-  useEffect(() => {
-    if (batchCompleteTrigger > 0 && isActive && sessionRef.current) {
-      sessionRef.current.then((s: any) => {
-        s.sendRealtimeInput([{ text: "[SYSTEM EVENT: Batch Generation Complete. Notify User.]" }]);
-      });
-    }
-  }, [batchCompleteTrigger, isActive]);
-
-
-  // --- Render ---
+  if (typeof document === 'undefined') {
+    // SSR védelem
+    return null;
+  }
 
   return createPortal(
-    <AnimatePresence>
-      <motion.div
-        drag
-        dragMomentum={false}
-        whileDrag={{ scale: 1.05 }}
-        className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end gap-3 cursor-move touch-none font-sans"
-      >
-        {/* Status Indicators */}
-        <AnimatePresence>
-          {isActive && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              exit={{ opacity: 0, y: 10 }}
-              className="flex flex-col items-end gap-2"
+    <motion.div
+      drag
+      dragMomentum={false}
+      whileDrag={{ scale: 1.1 }}
+      className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end gap-2 cursor-pointer touch-none"
+    >
+      {isActive && (
+        <div className="flex flex-col gap-2 items-end">
+          {isExecuting && (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="bg-purple-900/80 backdrop-blur-md border border-purple-500/30 text-purple-200 text-xs px-3 py-1.5 rounded-full shadow-xl flex items-center gap-2"
             >
-              {isExecuting && (
-                <div className="bg-purple-900/90 backdrop-blur-md border border-purple-500/50 text-purple-200 text-xs font-semibold px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-spin" />
-                  PROCESSING...
-                </div>
-              )}
-              
-              <div className="bg-slate-900/90 backdrop-blur-md border border-emerald-500/30 text-emerald-400 text-xs font-mono px-4 py-2 rounded-lg shadow-lg flex items-center gap-3">
-                <div className="flex gap-1 items-end h-3">
-                  {[1, 2, 3].map(i => (
-                    <motion.div 
-                      key={i}
-                      className="w-1 bg-emerald-500 rounded-full"
-                      animate={{ height: Math.max(4, Math.min(12, volume * 0.5 * i)) }}
-                      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                    />
-                  ))}
-                </div>
-                <span>LIVE</span>
-              </div>
+              <Sparkles className="w-3 h-3 text-purple-400 animate-spin" />
+              Processing command...
             </motion.div>
           )}
-        </AnimatePresence>
 
-        {/* Main Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            isActive ? stopSession() : startSession();
-          }}
-          onPointerDown={(e) => e.stopPropagation()}
-          className={`
-            relative w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-300 border border-white/10
-            ${isActive 
-              ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' 
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-slate-900/80 backdrop-blur-md border border-emerald-500/30 text-emerald-400 text-xs px-3 py-1.5 rounded-full shadow-xl flex items-center gap-2"
+          >
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            Connected ({Math.round(volume)}%)
+          </motion.div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isActive) {
+            stopSession();
+          } else {
+            startSession();
+          }
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        className={`
+          relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all
+          ${
+            isActive
+              ? 'bg-red-500 hover:bg-red-600'
               : isConnecting
-                ? 'bg-slate-700'
-                : 'bg-gradient-to-br from-emerald-600 to-teal-700 hover:brightness-110 shadow-emerald-500/30'
-            }
-          `}
-        >
-          {/* Ripple Effect when Active */}
-          {isActive && (
-            <span className="absolute inset-0 rounded-2xl border-2 border-white/40 animate-ping opacity-20"></span>
-          )}
+              ? 'bg-slate-700'
+              : 'bg-gradient-to-br from-emerald-500 to-teal-600 hover:scale-110'
+          }
+        `}
+      >
+        {isActive && (
+          <div
+            className="absolute inset-0 rounded-full border-2 border-white/30 transition-transform"
+            style={{ transform: `scale(${1 + volume / 100})` }}
+          />
+        )}
 
-          {isConnecting ? (
-            <Loader2 className="w-7 h-7 text-white animate-spin" />
-          ) : isActive ? (
-            <Mic className="w-7 h-7 text-white" />
-          ) : (
-            <MicOff className="w-7 h-7 text-white/70" />
-          )}
+        {!isActive && !isConnecting && (
+          <div className="absolute inset-0 rounded-full bg-emerald-500/30 voice-pulse -z-10" />
+        )}
 
-          {/* Close Handle (Mini) */}
-          {isActive && (
-            <div 
-              onClick={(e) => { e.stopPropagation(); stopSession(); }}
-              className="absolute -top-2 -right-2 bg-slate-800 text-slate-400 rounded-full p-1 hover:bg-red-500 hover:text-white transition-colors"
-            >
-              <X className="w-3 h-3" />
-            </div>
-          )}
-        </button>
-      </motion.div>
-    </AnimatePresence>,
-    document.body
+        {isConnecting ? (
+          <Loader2 className="w-8 h-8 text-white animate-spin" />
+        ) : isActive ? (
+          <Mic className="w-8 h-8 text-white" />
+        ) : (
+          <MicOff className="w-8 h-8 text-white/80" />
+        )}
+      </button>
+    </motion.div>,
+    document.body,
   );
 };
-
-export default VoiceAssistant;
