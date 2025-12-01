@@ -1165,6 +1165,24 @@ const App: React.FC = () => {
             toast.error("Download failed");
         }
     };
+    const handleEditorSave = (newUrl: string, newBlob: Blob) => {
+        if (!editingId) return;
+
+        setImages(prev => prev.map(img => {
+            if (img.id === editingId) {
+                return {
+                    ...img,
+                    previewUrl: newUrl,
+                    originalFile: new File([newBlob], img.originalFile.name, { type: newBlob.type }),
+                    file: new File([newBlob], img.originalFile.name, { type: newBlob.type }),
+                    status: ProcessingStatus.IDLE
+                };
+            }
+            return img;
+        }));
+        setEditingId(null);
+    };
+
     const originalCount = images.filter(i => !i.duplicateIndex || i.duplicateIndex === 1).length;
     const variantCount = images.filter(i => i.duplicateIndex && i.duplicateIndex > 1).length;
 
@@ -1201,7 +1219,7 @@ const App: React.FC = () => {
                 )}
             </AnimatePresence>
             <AnimatePresence>{isOCRModalOpen && (<OCRSelectionModal isOpen={isOCRModalOpen} onClose={() => setIsOCRModalOpen(false)} images={images} onExtract={runOCR} />)}</AnimatePresence>
-            <AnimatePresence>{editingId && (<ImageEditor imageUrl={images.find(i => i.id === editingId)?.previewUrl || ''} onSave={handleEditorSave} onClose={() => setEditingId(null)} onGenerativeFill={handleGenerativeFill} onRemoveText={() => { handleQuickRemoveText(editingId); setEditingId(null); }} />)}</AnimatePresence>
+            <AnimatePresence>{editingId && (<ImageEditor imageUrl={images.find(i => i.id === editingId)?.previewUrl || ''} onSave={handleEditorSave} onClose={() => setEditingId(null)} onGenerativeFill={handleGenerativeFill} />)}</AnimatePresence>
 
 
 

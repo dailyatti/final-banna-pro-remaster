@@ -9,6 +9,7 @@ interface VoiceAssistantProps {
     onCommand: (command: any) => void;
     onAudit: () => void;
     onApplyAll: () => void;
+    onCompositeUpdate?: (updates: any) => void;
     currentLanguage: string;
     images?: ImageItem[];
     batchCompleteTrigger?: number;
@@ -78,6 +79,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     onCommand,
     onAudit,
     onApplyAll,
+    onCompositeUpdate,
     currentLanguage,
     images = [],
     batchCompleteTrigger = 0,
@@ -195,7 +197,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
              - PROMPT BŐVÍTÉS: Ha a felhasználó rövid leírást ad (pl. "egy kutya"), te bővítsd ki profi angol leírássá ("Cinematic shot of a dog..."), és ezt küldd el a 'trigger_native_generation' prompt paraméterében.
              - NE KÉRDEZZ VISSZA ("Biztosan?"). Csináld.
 
-          3. MINDENT LÁTÓ SZEM:
+          3. KONTEXTUS ÉRZÉKELÉS (Kompozit Mód):
+             - HA a 'Modals Open: Composite=true' (a rendszerállapotban):
+               - Minden "formátum", "felbontás", "képarány" vagy "prompt" változtatást a 'update_composite_settings' eszközzel hajts végre.
+               - NE használd a 'update_dashboard'-ot, ha a Kompozit ablak nyitva van!
+             - HA a 'Modals Open: Composite=false':
+               - Használd a 'update_dashboard'-ot a globális beállításokhoz.
+
+          4. MINDENT LÁTÓ SZEM:
              - Használd a 'get_system_state'-et, ha nem tudod, mi van a képernyőn.
           `;
         } else {
@@ -220,7 +229,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
              - PROMPT EXPANSION: If user says "a cat", you MUST expand it to "Cinematic, photorealistic cat, 8k lighting..." inside the tool call.
              - DO NOT ASK for confirmation. Just execute.
 
-          3. CONTEXT AWARENESS:
+          3. CONTEXT AWARENESS (Composite Mode):
+             - IF 'Modals Open: Composite=true' (in system state):
+               - Route ALL "format", "resolution", "aspect ratio", or "prompt" changes to 'update_composite_settings'.
+               - DO NOT use 'update_dashboard' if Composite Modal is open!
+             - IF 'Modals Open: Composite=false':
+               - Use 'update_dashboard' for global settings.
+
+          4. CONTEXT AWARENESS:
              - Use 'get_system_state' to see active modals or input text.
           `;
         }
@@ -321,6 +337,19 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                 namingPattern: { type: Type.STRING, enum: ['ORIGINAL', 'RANDOM', 'SEQUENTIAL'] },
                                 prompt: { type: Type.STRING },
                                 targetIndex: { type: Type.STRING }
+                            }
+                        }
+                    },
+                    {
+                        name: 'update_composite_settings',
+                        description: 'Updates settings specifically for the Composite Generation Modal when it is open.',
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                aspectRatio: { type: Type.STRING, enum: ['1:1', '16:9', '9:16', '4:3', '3:4'] },
+                                resolution: { type: Type.STRING, enum: ['1K', '2K', '4K'] },
+                                format: { type: Type.STRING, enum: ['JPG', 'PNG', 'WEBP'] },
+                                prompt: { type: Type.STRING }
                             }
                         }
                     },
@@ -496,6 +525,13 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                 else if (fc.name === 'update_dashboard') {
                                     onCommand(args);
                                     result = { ok: true, message: "Dashboard updated." };
+                                } else if (fc.name === 'update_composite_settings') {
+                                    if (onCompositeUpdate) {
+                                        onCompositeUpdate(args);
+                                        result = { ok: true, message: "Composite settings updated." };
+                                    } else {
+                                        result = { ok: false, message: "Composite update handler not available." };
+                                    }
                                 } else if (fc.name === 'update_native_input') {
                                     onCommand({ updateNative: true, ...args });
                                     result = { ok: true, message: "Native input updated." };
