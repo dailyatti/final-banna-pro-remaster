@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
-import { Mic, MicOff, Loader2, Sparkles, ChevronUp, ChevronDown, Eye, EyeOff } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Mic, MicOff, Loader2, Sparkles, ChevronUp, ChevronDown, Eye, EyeOff, Power } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import { ImageItem } from '../types';
 import { resources } from '../services/i18n';
@@ -103,11 +103,10 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     const [isConnecting, setIsConnecting] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
     const [volume, setVolume] = useState(0);
-    const [isScrolling, setIsScrolling] = useState(false);
-    const [scrollDirection, setScrollDirection] = useState<'UP' | 'DOWN'>('DOWN');
     const [scrollPosition, setScrollPosition] = useState({ top: 0, percent: 0 });
     const [viewportElements, setViewportElements] = useState<ViewportElement[]>([]);
     const [showVisualAssist, setShowVisualAssist] = useState(false);
+    const [confirmingShutdown, setConfirmingShutdown] = useState(false);
 
     // Refs
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -118,7 +117,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     const nextStartTimeRef = useRef<number>(0);
     const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
     const sessionRef = useRef<any>(null);
-    const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
     // Callback refs to avoid stale closures
     const onCommandRef = useRef(onCommand);
@@ -153,26 +151,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
         return () => window.removeEventListener('scroll', handleScroll);
     }, [isActive]);
-
-    // Smooth Scrolling with precision control
-    useEffect(() => {
-        if (scrollIntervalRef.current) {
-            clearInterval(scrollIntervalRef.current);
-        }
-
-        if (isScrolling) {
-            scrollIntervalRef.current = setInterval(() => {
-                const amount = scrollDirection === 'DOWN' ? 50 : -50;
-                window.scrollBy({ top: amount, behavior: 'smooth' });
-            }, 50);
-        }
-
-        return () => {
-            if (scrollIntervalRef.current) {
-                clearInterval(scrollIntervalRef.current);
-            }
-        };
-    }, [isScrolling, scrollDirection]);
 
     // Analyze viewport elements for context awareness
     const analyzeViewport = useCallback(() => {
@@ -287,12 +265,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
    ${viewportElements.length > 10 ? `   ... and ${viewportElements.length - 10} more` : ''}
 
 5. INTERACTIVE CONTROLS:
-   - Active Scroll: ${isScrolling ? `YES (${scrollDirection.toLowerCase()})` : 'NO'}
    - Visual Assist: ${showVisualAssist ? 'ACTIVE' : 'inactive'}
 
 [END OF STATE REPORT]
         `.trim();
-    }, [currentLanguage, scrollPosition, viewportElements, modalsState, nativePrompt, isNativeGenerating, images.length, batchCompleteTrigger, isScrolling, scrollDirection, showVisualAssist]);
+    }, [currentLanguage, scrollPosition, viewportElements, modalsState, nativePrompt, isNativeGenerating, images.length, batchCompleteTrigger, showVisualAssist]);
 
     // Enhanced System Instruction with PhD-level context awareness
     const getSystemInstruction = useCallback(() => {
@@ -303,16 +280,17 @@ You are the Voice Interface of BananaAI. You have COMPLETE control over the inte
 
 YOUR CAPABILITIES:
 1. SCREEN AWARENESS: You know exactly what's visible on screen (images, buttons, inputs, modals)
-2. PRECISE NAVIGATION: You can scroll up/down, jump to positions, and navigate between sections
+2. PRECISE NAVIGATION: You scroll in STEPS (half screen or quarter screen), never continuously.
 3. MODAL MASTERY: You can open/close ANY modal window and interact with its contents
 4. ELEMENT CONTROL: You can click any button, fill any input, and modify any visible element
 5. CONTEXT SWITCHING: You maintain awareness of which context you're in (main page vs modal)
 
 SCROLLING PROTOCOL:
-- When user asks to scroll: Use control_scroll with START action
-- To stop scrolling: Use control_scroll with STOP action
-- For precision jumps: Use navigate_to_position with exact pixel or percentage
-- ALWAYS announce what becomes visible after scrolling
+- "Scroll down" -> control_scroll(direction="DOWN", intensity="NORMAL") (approx 50% screen)
+- "Scroll a little down" -> control_scroll(direction="DOWN", intensity="SMALL") (approx 25% screen)
+- "Scroll up" -> control_scroll(direction="UP", intensity="NORMAL")
+- "Scroll to image 5" -> navigate_to_position(position="image 5")
+- NEVER use continuous scrolling. Always discrete steps.
 
 MODAL MANAGEMENT:
 - To open a modal: Use manage_ui_state with appropriate OPEN_ action
@@ -325,6 +303,12 @@ ELEMENT INTERACTION:
 - Provide element_index from viewport analysis or describe element clearly
 - For inputs: Use update_element_value to modify content
 - For buttons: Use perform_element_action with 'CLICK'
+
+SHUTDOWN PROTOCOL:
+- If user says "Stop", "Exit", "Close yourself":
+  1. Ask "Do you want to close me?" (or Hungarian equivalent)
+  2. If user says "Yes": Call disconnect_assistant()
+  3. If user says "No": Continue listening.
 
 CONTEXT PRESERVATION:
 - Always check scroll position and viewport contents before acting
@@ -343,11 +327,12 @@ SPECIAL COMMANDS:
 MAGYAR NYELVŰ KONTEKSTUS:
 
 GÖRGETÉS PARANCSOK:
-- "Görgess le": control_scroll START DOWN
-- "Görgess fel": control_scroll START UP
-- "Állj meg": control_scroll STOP
+- "Görgess le": control_scroll DOWN NORMAL
+- "Görgess lejjebb egy kicsit": control_scroll DOWN SMALL
+- "Görgess fel": control_scroll UP NORMAL
 - "Ugorj az aljára": navigate_to_position 100%
 - "Menj a tetejére": navigate_to_position 0%
+- "Görgess a 3-as képhez": navigate_to_position "image 3"
 
 MODAL KEZELÉS:
 - "Nyisd meg a kompozit ablakot": manage_ui_state OPEN_COMPOSITE
@@ -359,6 +344,9 @@ ELEM INTERAKCIÓ:
 - "Írd be ide: 'macska'": update_element_value [input_index] "macska"
 - "Nyomd meg a generálás gombot": perform_element_action CLICK [generate_button_index]
 
+LEÁLLÍTÁS:
+- "Állj", "Lépj ki": Kérdezd meg: "Bezárjam magam?" -> Ha "Igen": disconnect_assistant()
+
 KONTEXTUS ÉRZÉKELÉS:
 - Mindig ellenőrizd: melyik ablak aktív, mi látható
 - Ha nem látszik az elem: görgess oda
@@ -367,11 +355,12 @@ KONTEXTUS ÉRZÉKELÉS:
 ENGLISH CONTEXT:
 
 SCROLLING COMMANDS:
-- "Scroll down": control_scroll START DOWN
-- "Scroll up": control_scroll START UP
-- "Stop scrolling": control_scroll STOP
+- "Scroll down": control_scroll DOWN NORMAL
+- "Scroll a bit down": control_scroll DOWN SMALL
+- "Scroll up": control_scroll UP NORMAL
 - "Jump to bottom": navigate_to_position 100%
 - "Go to top": navigate_to_position 0%
+- "Scroll to image 3": navigate_to_position "image 3"
 
 MODAL MANAGEMENT:
 - "Open composite modal": manage_ui_state OPEN_COMPOSITE
@@ -382,6 +371,9 @@ ELEMENT INTERACTION:
 - "Click the second image": perform_element_action CLICK 2 (image)
 - "Type 'cat' here": update_element_value [input_index] "cat"
 - "Press generate button": perform_element_action CLICK [generate_button_index]
+
+SHUTDOWN:
+- "Stop", "Exit": Ask "Do you want to close me?" -> If "Yes": disconnect_assistant()
 
 CONTEXT AWARENESS:
 - Always check: which window is active, what's visible
@@ -406,6 +398,20 @@ CONTEXT AWARENESS:
             targetY = 0;
         } else if (position === 'bottom') {
             targetY = docHeight;
+        } else if (position.toLowerCase().includes('image')) {
+            // Handle "image 3" or "3. image"
+            const match = position.match(/\d+/);
+            if (match) {
+                const index = parseInt(match[0]);
+                // Try to find by data-image-index (1-based usually in UI, check logic)
+                // Assuming data-image-index is 1-based from MainApp
+                const el = document.querySelector(`[data-image-index="${index}"]`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return { ok: true, message: `Navigated to image ${index}` };
+                }
+                return { ok: false, message: `Image ${index} not found on screen` };
+            }
         } else {
             // Try to find element by selector or text
             const element = document.querySelector(position) ||
@@ -492,24 +498,23 @@ CONTEXT AWARENESS:
                     },
                     {
                         name: 'control_scroll',
-                        description: 'Controls smooth scrolling. START for continuous, STOP to halt, STEP for single jump.',
+                        description: 'Controls page scrolling in discrete steps.',
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
-                                action: { type: Type.STRING, enum: ['START', 'STOP', 'STEP'], description: 'START=continuous, STOP=halt, STEP=single jump' },
                                 direction: { type: Type.STRING, enum: ['UP', 'DOWN'], description: 'Direction to scroll.' },
-                                speed: { type: Type.NUMBER, description: 'Optional: Speed multiplier (0.5=slow, 2=fast)' }
+                                intensity: { type: Type.STRING, enum: ['NORMAL', 'SMALL', 'LARGE'], description: 'NORMAL=50% screen, SMALL=25%, LARGE=100%' }
                             },
-                            required: ['action']
+                            required: ['direction']
                         }
                     },
                     {
                         name: 'navigate_to_position',
-                        description: 'Jump to specific position on page. Can use pixels, percentages, or element selectors.',
+                        description: 'Jump to specific position or element (e.g. "image 3").',
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
-                                position: { type: Type.STRING, description: 'e.g., "500px", "50%", "top", "bottom", "#element-id", ".class-name"' }
+                                position: { type: Type.STRING, description: 'e.g., "500px", "50%", "top", "bottom", "image 3", "#element-id"' }
                             },
                             required: ['position']
                         }
@@ -538,7 +543,11 @@ CONTEXT AWARENESS:
                         description: 'Toggle visual overlay showing what the assistant can see.',
                         parameters: { type: Type.OBJECT, properties: {} }
                     },
-                    // ... (keep all existing tools from original code, adding them here)
+                    {
+                        name: 'disconnect_assistant',
+                        description: 'Closes the voice assistant session.',
+                        parameters: { type: Type.OBJECT, properties: {} }
+                    },
                     {
                         name: 'update_dashboard',
                         description: 'Updates existing images config in the queue (bulk or specific).',
@@ -773,250 +782,210 @@ CONTEXT AWARENESS:
                                     setShowVisualAssist(prev => !prev);
                                     result = { ok: true, message: `Visual assist ${showVisualAssist ? 'disabled' : 'enabled'}` };
                                 }
+                                else if (fc.name === 'disconnect_assistant') {
+                                    disconnect();
+                                    result = { ok: true, message: "Disconnected." };
+                                }
                                 // Handle existing tools (same logic as before)
                                 else if (fc.name === 'get_system_state') {
                                     result = { ok: true, message: generateStateReport() };
                                 }
                                 else if (fc.name === 'control_scroll') {
-                                    if (args.action === 'START') {
-                                        setScrollDirection(args.direction || 'DOWN');
-                                        setIsScrolling(true);
-                                        result = { ok: true, message: `Scrolling ${args.direction || 'DOWN'} started.` };
-                                    } else if (args.action === 'STEP') {
-                                        setIsScrolling(false);
-                                        const amount = args.direction === 'UP' ? -600 : 600;
-                                        window.scrollBy({ top: amount, behavior: 'smooth' });
-                                        result = { ok: true, message: `Stepped ${args.direction || 'DOWN'}` };
-                                    } else {
-                                        setIsScrolling(false);
-                                        result = { ok: true, message: "Scrolling stopped." };
-                                    }
+                                    const direction = args.direction || 'DOWN';
+                                    const intensity = args.intensity || 'NORMAL';
+                                    let amount = window.innerHeight * 0.5; // Default NORMAL
+
+                                    if (intensity === 'SMALL') amount = window.innerHeight * 0.25;
+                                    if (intensity === 'LARGE') amount = window.innerHeight * 0.9;
+
+                                    if (direction === 'UP') amount = -amount;
+
+                                    window.scrollBy({ top: amount, behavior: 'smooth' });
+                                    result = { ok: true, message: `Scrolled ${direction} (${intensity})` };
                                 }
                                 else if (fc.name === 'update_dashboard') {
                                     onCommandRef.current(args);
                                     result = { ok: true, message: "Dashboard updated." };
                                 }
-                                // ... (handle all other existing tools as in original code)
-                                // [Include all the existing tool handling logic here]
+                                else if (fc.name === 'update_composite_settings') {
+                                    onCommandRef.current({ compositeAction: true, ...args });
+                                    result = { ok: true, message: "Composite settings updated." };
+                                }
+                                else if (fc.name === 'update_native_input') {
+                                    onCommandRef.current({ updateNative: args });
+                                    result = { ok: true, message: "Native input updated." };
+                                }
+                                else if (fc.name === 'trigger_native_generation') {
+                                    onCommandRef.current({ triggerNative: true, ...args });
+                                    result = { ok: true, message: "Generation triggered." };
+                                }
+                                else if (fc.name === 'perform_item_action') {
+                                    onCommandRef.current({ itemAction: args.action, targetIndex: args.targetIndex });
+                                    result = { ok: true, message: `Item action ${args.action} performed.` };
+                                }
+                                else if (fc.name === 'apply_settings_globally') {
+                                    onApplyAllRef.current();
+                                    result = { ok: true, message: "Settings applied globally." };
+                                }
+                                else if (fc.name === 'start_processing_queue') {
+                                    onCommandRef.current({ startQueue: true });
+                                    result = { ok: true, message: "Queue processing started." };
+                                }
+                                else if (fc.name === 'analyze_images') {
+                                    onAuditRef.current();
+                                    result = { ok: true, message: "Analysis started." };
+                                }
+                                else if (fc.name === 'manage_ui_state') {
+                                    onCommandRef.current({ uiAction: args.action, value: args.value });
+                                    result = { ok: true, message: `UI State: ${args.action}` };
+                                }
+                                else if (fc.name === 'manage_queue_actions') {
+                                    onCommandRef.current({ queueAction: args.action });
+                                    result = { ok: true, message: `Queue action: ${args.action}` };
+                                }
+                                else if (fc.name === 'read_documentation') {
+                                    const docText = resources[currentLanguage]?.translation?.documentation || "Documentation not available.";
+                                    result = { ok: true, message: docText.substring(0, 1000) + "..." };
+                                }
+                                else if (fc.name === 'control_pod_module') {
+                                    onCommandRef.current({ podAction: args.action, ...args });
+                                    result = { ok: true, message: `POD action: ${args.action}` };
+                                }
 
                                 functionResponses.push({
                                     name: fc.name,
                                     id: fc.id,
-                                    response: result
+                                    response: { result }
                                 });
                             }
 
-                            if (functionResponses.length > 0) {
-                                sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
-                            }
-                            setTimeout(() => setIsExecuting(false), 500);
-                        }
-
-                        // Handle audio response (same as original)
-                        const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                        if (base64Audio) {
-                            try {
-                                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioContext.currentTime);
-                                const audioBuffer = await decodeAudioData(decode(base64Audio), audioContext, 24000, 1);
-                                const source = audioContext.createBufferSource();
-                                source.buffer = audioBuffer;
-                                source.connect(outputNode);
-                                source.start(nextStartTimeRef.current);
-                                nextStartTimeRef.current += audioBuffer.duration;
-                                sourcesRef.current.add(source);
-                                source.onended = () => sourcesRef.current.delete(source);
-                            } catch (e) { }
+                            sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
+                            setIsExecuting(false);
                         }
                     },
-
-                    onclose: stopSession,
-                    onerror: stopSession
+                    onclose: () => {
+                        setIsActive(false);
+                        setIsConnecting(false);
+                    },
+                    onError: (e) => {
+                        console.error("Gemini Live Error:", e);
+                        setIsActive(false);
+                        setIsConnecting(false);
+                        toast.error("Connection error");
+                    }
                 }
             });
 
-        } catch (e) {
-            console.error(e);
+        } catch (error) {
+            console.error("Connection failed:", error);
             setIsConnecting(false);
+            toast.error("Failed to connect to Voice Assistant");
         }
     };
 
-    const stopSession = () => {
-        // Cleanup (same as original)
-        sessionRef.current = null;
+    const disconnect = useCallback(async () => {
+        if (sessionRef.current) {
+            // sessionRef.current.close(); // API doesn't have explicit close, just stop streams
+            sessionRef.current = null;
+        }
 
-        if (processorRef.current) {
-            processorRef.current.disconnect();
-            processorRef.current = null;
-        }
-        if (sourceRef.current) {
-            sourceRef.current.disconnect();
-            sourceRef.current = null;
-        }
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
         }
 
-        if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-        }
         if (inputAudioContextRef.current) {
-            inputAudioContextRef.current.close();
+            await inputAudioContextRef.current.close();
             inputAudioContextRef.current = null;
         }
 
-        sourcesRef.current.forEach(source => {
-            try { source.stop(); } catch (e) { }
-        });
-        sourcesRef.current.clear();
-        nextStartTimeRef.current = 0;
+        if (audioContextRef.current) {
+            await audioContextRef.current.close();
+            audioContextRef.current = null;
+        }
 
         setIsActive(false);
-        setIsConnecting(false);
-        setVolume(0);
-        setIsScrolling(false);
-        if (scrollIntervalRef.current) {
-            clearInterval(scrollIntervalRef.current);
-        }
-    };
+    }, []);
 
     // Visual Assist Overlay
     const VisualAssistOverlay = () => {
         if (!showVisualAssist) return null;
 
         return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="fixed inset-0 pointer-events-none z-40"
-            >
-                {/* Viewport highlight */}
-                <div className="absolute inset-0 border-4 border-emerald-400/50 rounded-lg m-4 shadow-2xl">
-                    <div className="absolute -top-8 left-4 bg-emerald-900 text-emerald-100 px-3 py-1 rounded text-sm font-mono">
-                        Viewport ({viewportElements.length} elements)
-                    </div>
-                </div>
-
-                {/* Element highlights */}
-                {viewportElements.map((el, idx) => (
-                    <motion.div
-                        key={idx}
-                        initial={{ scale: 0.9 }}
-                        animate={{ scale: 1 }}
-                        className="absolute border-2 border-purple-400/40 bg-purple-900/10 rounded"
+            <div className="fixed inset-0 z-[10000] pointer-events-none">
+                {viewportElements.map((el, i) => (
+                    <div
+                        key={i}
                         style={{
-                            left: el.rect.left + window.scrollX,
-                            top: el.rect.top + window.scrollY,
+                            position: 'absolute',
+                            left: el.rect.left,
+                            top: el.rect.top,
                             width: el.rect.width,
                             height: el.rect.height,
+                            border: '2px solid rgba(0, 255, 0, 0.5)',
+                            backgroundColor: 'rgba(0, 255, 0, 0.1)',
                         }}
                     >
-                        <div className="absolute -top-6 left-0 bg-purple-900 text-purple-100 px-2 py-0.5 rounded text-xs font-mono whitespace-nowrap">
-                            {el.type} #{idx}
-                        </div>
-                    </motion.div>
-                ))}
-
-                {/* Scroll position indicator */}
-                <div className="fixed right-8 top-1/2 transform -translate-y-1/2">
-                    <div className="bg-slate-900/90 backdrop-blur-md text-white p-4 rounded-xl shadow-2xl">
-                        <div className="text-sm font-semibold mb-2">Scroll Position</div>
-                        <div className="text-2xl font-mono mb-2">{scrollPosition.percent}%</div>
-                        <div className="text-xs text-slate-300">{scrollPosition.top}px</div>
-
-                        <div className="mt-4 space-y-2">
-                            <button
-                                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                                className="w-full bg-slate-800 hover:bg-slate-700 p-2 rounded flex items-center justify-center gap-2"
-                            >
-                                <ChevronUp className="w-4 h-4" />
-                                Top
-                            </button>
-                            <button
-                                onClick={() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' })}
-                                className="w-full bg-slate-800 hover:bg-slate-700 p-2 rounded flex items-center justify-center gap-2"
-                            >
-                                <ChevronDown className="w-4 h-4" />
-                                Bottom
-                            </button>
-                        </div>
+                        <span className="absolute -top-6 left-0 bg-black/80 text-green-400 text-xs px-1 rounded">
+                            {el.type} {el.index !== undefined ? `#${el.index}` : ''}
+                        </span>
                     </div>
+                ))}
+                <div className="absolute top-4 right-4 bg-black/80 text-white p-4 rounded-lg font-mono text-xs">
+                    <p>Scroll: {scrollPosition.top}px ({scrollPosition.percent}%)</p>
+                    <p>Elements: {viewportElements.length}</p>
                 </div>
-            </motion.div>
+            </div>
         );
     };
 
     return (
         <>
             <VisualAssistOverlay />
-
-            <motion.div
-                drag
-                dragMomentum={false}
-                className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2"
+            <motion.button
+                onClick={isActive ? disconnect : startSession}
+                className={`fixed bottom-8 right-8 z-[9999] p-4 rounded-full shadow-2xl backdrop-blur-xl border transition-all duration-300 group ${isActive
+                    ? 'bg-red-500/10 border-red-500/50 hover:bg-red-500/20'
+                    : 'bg-indigo-500/10 border-indigo-500/50 hover:bg-indigo-500/20'
+                    }`}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
             >
-                {isActive && (
-                    <div className="flex flex-col gap-2 items-end">
-                        {isExecuting && (
-                            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
-                                className="bg-purple-900/80 backdrop-blur-md border border-purple-500/30 text-purple-200 text-xs px-3 py-1.5 rounded-full shadow-xl flex items-center gap-2">
-                                <Sparkles className="w-3 h-3 text-purple-400 animate-spin" />
-                                Processing Command...
-                            </motion.div>
-                        )}
-
-                        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
-                            className="bg-slate-900/80 backdrop-blur-md border border-emerald-500/30 text-emerald-400 text-xs px-3 py-1.5 rounded-full shadow-xl flex items-center gap-2">
-                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                            Connected ({Math.round(volume)}%)
-                        </motion.div>
-
-                        {isScrolling && (
-                            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                                className="bg-blue-900/80 backdrop-blur-md border border-blue-500/30 text-blue-200 text-xs px-3 py-1.5 rounded-full shadow-xl flex items-center gap-2">
-                                {scrollDirection === 'DOWN' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-                                Scrolling {scrollDirection.toLowerCase()} ({scrollPosition.percent}%)
-                            </motion.div>
-                        )}
-                    </div>
-                )}
-
-                <div className="flex gap-2">
-                    {isActive && (
-                        <motion.button
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            onClick={() => setShowVisualAssist(!showVisualAssist)}
-                            className="w-12 h-12 rounded-full bg-slate-800/80 backdrop-blur-md border border-slate-600/30 flex items-center justify-center shadow-xl hover:scale-110 transition-all"
-                            title="Toggle Visual Assist"
-                        >
-                            {showVisualAssist ? <EyeOff className="w-5 h-5 text-slate-300" /> : <Eye className="w-5 h-5 text-slate-300" />}
-                        </motion.button>
+                <div className="relative">
+                    {isConnecting ? (
+                        <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+                    ) : isActive ? (
+                        <>
+                            <span className="absolute inset-0 rounded-full bg-red-500/20 animate-ping" />
+                            <Mic className="w-8 h-8 text-red-400 relative z-10" />
+                        </>
+                    ) : (
+                        <MicOff className="w-8 h-8 text-indigo-400 group-hover:text-indigo-300" />
                     )}
 
-                    <button
-                        onClick={isActive ? stopSession : startSession}
-                        className={`
-                            relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all
-                            ${isActive
-                                ? 'bg-red-500 hover:bg-red-600'
-                                : isConnecting
-                                    ? 'bg-slate-700'
-                                    : 'bg-gradient-to-br from-emerald-500 to-teal-600 hover:scale-110'
-                            }
-                        `}
-                    >
-                        {isActive && (
-                            <div className="absolute inset-0 rounded-full border-2 border-white/30" style={{ transform: `scale(${1 + volume / 100})` }}></div>
-                        )}
-                        {!isActive && !isConnecting && (
-                            <div className="absolute inset-0 rounded-full bg-emerald-500/30 voice-pulse -z-10"></div>
-                        )}
-                        {isConnecting ? <Loader2 className="w-8 h-8 text-white animate-spin" /> : isActive ? <Mic className="w-8 h-8 text-white" /> : <MicOff className="w-8 h-8 text-white/80" />}
-                    </button>
+                    {/* Status Bubble */}
+                    <div className={`absolute -top-2 -right-2 w-4 h-4 rounded-full border-2 border-[#020617] ${isActive ? 'bg-green-500' : 'bg-slate-500'
+                        }`} />
                 </div>
-            </motion.div>
+
+                {/* Volume Visualizer Ring */}
+                {isActive && (
+                    <svg className="absolute inset-0 -m-1 w-[calc(100%+8px)] h-[calc(100%+8px)] pointer-events-none">
+                        <circle
+                            cx="50%"
+                            cy="50%"
+                            r="24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            className="text-indigo-500/30"
+                            style={{
+                                r: 24 + (volume / 255) * 10
+                            }}
+                        />
+                    </svg>
+                )}
+            </motion.button>
         </>
     );
 };
