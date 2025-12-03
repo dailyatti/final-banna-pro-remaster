@@ -94,6 +94,25 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     const [isConnecting, setIsConnecting] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
     const [volume, setVolume] = useState(0);
+    const [isScrolling, setIsScrolling] = useState(false);
+
+    // Smooth Scrolling Logic
+    useEffect(() => {
+        let animationFrameId: number;
+
+        const scrollLoop = () => {
+            if (isScrolling) {
+                window.scrollBy({ top: 2, behavior: 'auto' }); // Slow, smooth scroll
+                animationFrameId = requestAnimationFrame(scrollLoop);
+            }
+        };
+
+        if (isScrolling) {
+            animationFrameId = requestAnimationFrame(scrollLoop);
+        }
+
+        return () => cancelAnimationFrame(animationFrameId);
+    }, [isScrolling]);
 
     // Audio Contexts and Streams
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -317,14 +336,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                         parameters: { type: Type.OBJECT, properties: {} }
                     },
                     {
-                        name: 'scroll_viewport',
-                        description: 'Scrolls the page.',
+                        name: 'control_scroll',
+                        description: 'Controls continuous smooth scrolling. Use START to begin scrolling down, and STOP to halt immediately.',
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
-                                direction: { type: Type.STRING, enum: ['UP', 'DOWN', 'TOP', 'BOTTOM'], description: 'Direction to scroll.' }
+                                action: { type: Type.STRING, enum: ['START', 'STOP'], description: 'START to begin scrolling, STOP to halt.' }
                             },
-                            required: ['direction']
+                            required: ['action']
                         }
                     },
                     {
@@ -554,9 +573,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                 if (fc.name === 'get_system_state') {
                                     result = { ok: true, message: generateStateReport() };
                                 }
-                                else if (fc.name === 'scroll_viewport') {
-                                    onCommandRef.current({ scrollAction: args.direction });
-                                    result = { ok: true, message: `Scrolled ${args.direction}` };
+                                else if (fc.name === 'control_scroll') {
+                                    if (args.action === 'START') {
+                                        setIsScrolling(true);
+                                        result = { ok: true, message: "Scrolling started. Say STOP to halt." };
+                                    } else {
+                                        setIsScrolling(false);
+                                        result = { ok: true, message: "Scrolling stopped." };
+                                    }
                                 }
                                 else if (fc.name === 'update_dashboard') {
                                     onCommandRef.current(args);
