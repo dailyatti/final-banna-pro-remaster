@@ -1,81 +1,320 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
-import { Mic, MicOff, Loader2, Sparkles } from 'lucide-react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { GoogleGenAI, LiveServerMessage, Modality, Type, Tool } from '@google/genai';
+import { Mic, MicOff, Loader2, Sparkles, ChevronUp, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
-import { ImageItem } from '../types';
-import { resources } from '../services/i18n';
-import { POD_PRESETS } from '../data/podPresets';
 
+// --- TYPE DEFINITIONS ---
+
+// Define strict types for the external props to ensure integration safety
 interface VoiceAssistantProps {
     apiKey: string;
-    onCommand: (command: any) => void;
+    // Commands are generic actions passed back to the main app
+    onCommand: (command: AssistantCommand) => void;
     onAudit: () => void;
     onApplyAll: () => void;
     onCompositeUpdate?: (updates: any) => void;
     currentLanguage: string;
-    images?: ImageItem[];
+    // Image context
+    images?: any[];
+    // State flags
     batchCompleteTrigger?: number;
     nativePrompt?: string;
     isNativeGenerating?: boolean;
-    modalsState?: { composite: boolean; ocr: boolean; guide: boolean; langMenu?: boolean };
+    modalsState?: {
+        composite: boolean;
+        ocr: boolean;
+        guide: boolean;
+        langMenu?: boolean;
+        [key: string]: any; // Allow extensibility
+    };
 }
 
-// Audio Decoding for Gemini Live (PCM 16le -> AudioBuffer)
-async function decodeAudioData(
-    data: Uint8Array,
-    ctx: AudioContext,
-    sampleRate: number,
-    numChannels: number,
-): Promise<AudioBuffer> {
-    const dataInt16 = new Int16Array(data.buffer);
-    const frameCount = dataInt16.length / numChannels;
-    const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+// Unified Command Interface
+interface AssistantCommand {
+    type?: string;
+    updateNative?: boolean;
+    triggerNative?: boolean;
+    startQueue?: boolean;
+    uiAction?: string;
+    itemAction?: string;
+    [key: string]: any;
+}
 
-    for (let channel = 0; channel < numChannels; channel++) {
-        const channelData = buffer.getChannelData(channel);
-        for (let i = 0; i < frameCount; i++) {
-            channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-        }
+// Audio Constants
+const AUDIO_SAMPLE_RATE = 24000; // Gemini native output rate
+const INPUT_SAMPLE_RATE_fallback = 48000;
+
+// --- UTILITIES (Pure Functions) ---
+
+/**
+ * Converts Float32 audio data to Int16 PCM for Gemini API.
+ * Optimized for low latency.
+ */
+function floatTo16BitPCM(input: Float32Array): Int16Array {
+    const output = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+        const s = Math.max(-1, Math.min(1, input[i]));
+        output[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
     }
-    return buffer;
+    return output;
 }
 
-// Helper to decode base64
-function decode(base64: string) {
+/**
+ * Base64 encoding/decoding helpers
+ */
+const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+};
+
+const base64ToArrayBuffer = (base64: string) => {
     const binaryString = atob(base64);
     const len = binaryString.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
         bytes[i] = binaryString.charCodeAt(i);
     }
-    return bytes;
-}
+    return bytes.buffer;
+};
 
-// Helper to encode base64
-function encode(bytes: Uint8Array) {
-    let binary = '';
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-}
+// --- CUSTOM HOOK: useGeminiLive ---
+/**
+ * Encapsulates the complexity of WebSocket management, AudioContexts, and Tool routing.
+ */
+const useGeminiLive = ({
+    apiKey,
+    systemInstruction,
+    tools,
+    onToolCall,
+}: {
+    apiKey: string;
+    systemInstruction: string;
+    tools: Tool[];
+    onToolCall: (name: string, args: any) => Promise<any>;
+}) => {
+    const [status, setStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
+    const [volume, setVolume] = useState(0);
+    const [isProcessing, setIsProcessing] = useState(false);
 
-// Create PCM Blob for sending to API with DYNAMIC Sample Rate
-function createBlob(data: Float32Array, sampleRate: number): { data: string; mimeType: string } {
-    const l = data.length;
-    const int16 = new Int16Array(l);
-    for (let i = 0; i < l; i++) {
-        // Convert Float32 (-1.0 to 1.0) to Int16 (-32768 to 32767)
-        int16[i] = data[i] * 32768;
-    }
-    return {
-        data: encode(new Uint8Array(int16.buffer)),
-        // CRITICAL FIX: Send the ACTUAL sample rate to Gemini, not a hardcoded 16000
-        mimeType: `audio/pcm;rate=${sampleRate}`,
-    };
-}
+    // Refs for persistence across renders without triggering re-renders
+    const sessionRef = useRef<any>(null);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const inputContextRef = useRef<AudioContext | null>(null);
+    const streamRef = useRef<MediaStream | null>(null);
+    const processorRef = useRef<ScriptProcessorNode | null>(null);
+    const nextPlayTimeRef = useRef<number>(0);
+    const audioQueueRef = useRef<AudioBufferSourceNode[]>([]);
+
+    // Cleanup function to strictly close all audio resources
+    const disconnect = useCallback(async () => {
+        setStatus('idle');
+        setVolume(0);
+
+        if (sessionRef.current) {
+            // No strict close method on some SDK versions, but we nullify the ref
+            sessionRef.current = null;
+        }
+
+        // Stop Microphone Stream
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+
+        // Close Audio Contexts
+        if (inputContextRef.current) {
+            await inputContextRef.current.close();
+            inputContextRef.current = null;
+        }
+        if (audioContextRef.current) {
+            await audioContextRef.current.close();
+            audioContextRef.current = null;
+        }
+
+        // Stop Script Processor
+        if (processorRef.current) {
+            processorRef.current.disconnect();
+            processorRef.current = null;
+        }
+
+        // Stop all playing audio
+        audioQueueRef.current.forEach(source => {
+            try { source.stop(); } catch (e) { }
+        });
+        audioQueueRef.current = [];
+    }, []);
+
+    const connect = useCallback(async () => {
+        if (!apiKey) {
+            toast.error("API Key missing");
+            return;
+        }
+
+        setStatus('connecting');
+
+        try {
+            // 1. Initialize Audio Output Context (Speakers)
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
+                sampleRate: AUDIO_SAMPLE_RATE
+            });
+            audioContextRef.current = audioCtx;
+            nextPlayTimeRef.current = audioCtx.currentTime;
+
+            // 2. Initialize Microphone Input
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleRate: INPUT_SAMPLE_RATE_fallback
+                }
+            });
+            streamRef.current = stream;
+
+            const streamSettings = stream.getAudioTracks()[0].getSettings();
+            const actualSampleRate = streamSettings.sampleRate || INPUT_SAMPLE_RATE_fallback;
+
+            const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({
+                sampleRate: actualSampleRate
+            });
+            inputContextRef.current = inputCtx;
+
+            // 3. Setup Analyzer (Visualizer)
+            const analyzer = inputCtx.createAnalyser();
+            analyzer.fftSize = 256;
+            const source = inputCtx.createMediaStreamSource(stream);
+            source.connect(analyzer);
+
+            // Volume monitoring loop
+            const checkVolume = () => {
+                if (inputCtx.state === 'closed') return;
+                const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+                analyzer.getByteFrequencyData(dataArray);
+                const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+                setVolume(avg);
+                requestAnimationFrame(checkVolume);
+            };
+            checkVolume();
+
+            // 4. Initialize Gemini Session
+            const client = new GoogleGenAI({ apiKey });
+
+            // Connect using the Live API
+            const session = await client.live.connect({
+                model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+                config: {
+                    tools: tools,
+                    systemInstruction: systemInstruction,
+                    responseModalities: [Modality.AUDIO], // We want the AI to speak back
+                },
+            });
+
+            // 5. Setup Audio Processing (Mic -> Gemini)
+            // Use ScriptProcessor (legacy but reliable for raw PCM) or AudioWorklet in prod
+            const processor = inputCtx.createScriptProcessor(4096, 1, 1);
+            processorRef.current = processor;
+
+            processor.onaudioprocess = (e) => {
+                const inputData = e.inputBuffer.getChannelData(0);
+                // Downsample or convert if necessary, here we send raw PCM 
+                // but we must tell Gemini the correct rate
+                const pcm16 = floatTo16BitPCM(inputData);
+                const base64Data = arrayBufferToBase64(pcm16.buffer);
+
+                session.sendRealtimeInput({
+                    media: {
+                        mimeType: `audio/pcm;rate=${actualSampleRate}`,
+                        data: base64Data
+                    }
+                });
+            };
+
+            source.connect(processor);
+            processor.connect(inputCtx.destination); // Required for processing to happen
+
+            // 6. Handle Incoming Messages (Gemini -> Speakers)
+            // @ts-ignore - Callback types can be tricky in the SDK preview
+            session.on('content', (content: any) => {
+                // Handle Audio
+                const base64Audio = content.modelTurn?.parts?.find((p: any) => p.inlineData)?.inlineData?.data;
+                if (base64Audio && audioCtx) {
+                    const audioData = base64ToArrayBuffer(base64Audio);
+                    const int16Data = new Int16Array(audioData);
+                    const float32Data = new Float32Array(int16Data.length);
+
+                    // Convert back to Float32 for WebAudio
+                    for (let i = 0; i < int16Data.length; i++) {
+                        float32Data[i] = int16Data[i] / 32768.0;
+                    }
+
+                    const buffer = audioCtx.createBuffer(1, float32Data.length, AUDIO_SAMPLE_RATE);
+                    buffer.getChannelData(0).set(float32Data);
+
+                    const sourceNode = audioCtx.createBufferSource();
+                    sourceNode.buffer = buffer;
+                    sourceNode.connect(audioCtx.destination);
+
+                    // Schedule playback without gaps
+                    const startTime = Math.max(audioCtx.currentTime, nextPlayTimeRef.current);
+                    sourceNode.start(startTime);
+                    nextPlayTimeRef.current = startTime + buffer.duration;
+
+                    audioQueueRef.current.push(sourceNode);
+                    sourceNode.onended = () => {
+                        audioQueueRef.current = audioQueueRef.current.filter(s => s !== sourceNode);
+                    };
+                }
+            });
+
+            // @ts-ignore
+            session.on('toolCall', async (toolCall: any) => {
+                setIsProcessing(true);
+                const responses = [];
+
+                for (const fc of toolCall.functionCalls) {
+                    console.log(`[Assistant] Executing: ${fc.name}`, fc.args);
+                    try {
+                        const result = await onToolCall(fc.name, fc.args);
+                        responses.push({
+                            name: fc.name,
+                            id: fc.id,
+                            response: { result: result }
+                        });
+                    } catch (err: any) {
+                        console.error(`Tool error: ${fc.name}`, err);
+                        responses.push({
+                            name: fc.name,
+                            id: fc.id,
+                            response: { error: err.message || "Unknown error" }
+                        });
+                    }
+                }
+
+                session.sendToolResponse({ functionResponses: responses });
+                setIsProcessing(false);
+            });
+
+            sessionRef.current = session;
+            setStatus('connected');
+
+        } catch (error) {
+            console.error("Connection failed:", error);
+            disconnect();
+            setStatus('error');
+            toast.error("Failed to connect to Voice Assistant");
+        }
+    }, [apiKey, systemInstruction, tools, onToolCall, disconnect]);
+
+    return { connect, disconnect, status, volume, isProcessing, session: sessionRef.current };
+};
+
+
+// --- MAIN COMPONENT ---
 
 export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     apiKey,
@@ -85,673 +324,275 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     onCompositeUpdate,
     currentLanguage,
     images = [],
-    batchCompleteTrigger = 0,
-    nativePrompt = '',
-    isNativeGenerating = false,
     modalsState = { composite: false, ocr: false, guide: false, langMenu: false }
 }) => {
-    const [isActive, setIsActive] = useState(false);
-    const [isConnecting, setIsConnecting] = useState(false);
-    const [isExecuting, setIsExecuting] = useState(false);
-    const [volume, setVolume] = useState(0);
+    // UI State for Scrolling
     const [isScrolling, setIsScrolling] = useState(false);
     const [scrollDirection, setScrollDirection] = useState<'UP' | 'DOWN'>('DOWN');
 
-    // Smooth Scrolling Logic
-    useEffect(() => {
-        let animationFrameId: number;
+    // Refs to break closures in the tool callbacks
+    const propsRef = useRef({ onCommand, onAudit, onApplyAll, onCompositeUpdate, images, modalsState, currentLanguage });
 
+    // Sync refs constantly
+    useEffect(() => {
+        propsRef.current = { onCommand, onAudit, onApplyAll, onCompositeUpdate, images, modalsState, currentLanguage };
+    }, [onCommand, onAudit, onApplyAll, onCompositeUpdate, images, modalsState, currentLanguage]);
+
+    // --- SCROLLING LOGIC ---
+    // Smooth scrolling loop using requestAnimationFrame
+    useEffect(() => {
+        let animationId: number;
         const scrollLoop = () => {
             if (isScrolling) {
-                const amount = scrollDirection === 'DOWN' ? 2 : -2;
+                const amount = scrollDirection === 'DOWN' ? 4 : -4; // Speed
                 window.scrollBy({ top: amount, behavior: 'auto' });
-                animationFrameId = requestAnimationFrame(scrollLoop);
+
+                // Boundary checks to stop scrolling automatically
+                const isBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight;
+                const isTop = window.scrollY <= 0;
+
+                if ((scrollDirection === 'DOWN' && isBottom) || (scrollDirection === 'UP' && isTop)) {
+                    setIsScrolling(false);
+                } else {
+                    animationId = requestAnimationFrame(scrollLoop);
+                }
             }
         };
 
         if (isScrolling) {
-            animationFrameId = requestAnimationFrame(scrollLoop);
+            animationId = requestAnimationFrame(scrollLoop);
         }
-
-        return () => cancelAnimationFrame(animationFrameId);
+        return () => cancelAnimationFrame(animationId);
     }, [isScrolling, scrollDirection]);
 
-    // Audio Contexts and Streams
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const inputAudioContextRef = useRef<AudioContext | null>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-
-    // Nodes for cleanup
-    const processorRef = useRef<ScriptProcessorNode | null>(null);
-    const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-
-    // Audio Scheduling
-    const nextStartTimeRef = useRef<number>(0);
-    const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-
-    // Session Management
-    const sessionRef = useRef<any>(null);
-
-    // CRITICAL FIX: Use Refs for callbacks to avoid stale closures in the long-running session
-    const onCommandRef = useRef(onCommand);
-    const onAuditRef = useRef(onAudit);
-    const onApplyAllRef = useRef(onApplyAll);
-    const onCompositeUpdateRef = useRef(onCompositeUpdate);
-
-    useEffect(() => {
-        onCommandRef.current = onCommand;
-        onAuditRef.current = onAudit;
-        onApplyAllRef.current = onApplyAll;
-        onCompositeUpdateRef.current = onCompositeUpdate;
-    }, [onCommand, onAudit, onApplyAll, onCompositeUpdate]);
-
-    // ANNOUNCE BATCH COMPLETION
-    useEffect(() => {
-        if (batchCompleteTrigger > 0 && sessionRef.current) {
-            sessionRef.current.then((session: any) => {
-                session.sendToolResponse({
-                    functionResponses: {
-                        name: 'system_announcement_trigger',
-                        id: 'batch-complete-' + Date.now(),
-                        response: {
-                            result: currentLanguage === 'hu'
-                                ? "A kötegelt generálás befejeződött. Jelentsd be a felhasználónak."
-                                : "Batch processing complete. Announce this to the user."
-                        }
-                    }
-                });
-            });
-        }
-    }, [batchCompleteTrigger, currentLanguage]);
-
-    const stopSession = () => {
-        sessionRef.current = null;
-
-        if (processorRef.current) {
-            processorRef.current.disconnect();
-            processorRef.current = null;
-        }
-        if (sourceRef.current) {
-            sourceRef.current.disconnect();
-            sourceRef.current = null;
-        }
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-
-        if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-        }
-        if (inputAudioContextRef.current) {
-            inputAudioContextRef.current.close();
-            inputAudioContextRef.current = null;
-        }
-
-        sourcesRef.current.forEach(source => {
-            try { source.stop(); } catch (e) { }
-        });
-        sourcesRef.current.clear();
-        nextStartTimeRef.current = 0;
-
-        setIsActive(false);
-        setIsConnecting(false);
-        setVolume(0);
-    };
-
-    const generateStateReport = () => {
-        return `
-      [SYSTEM STATE SNAPSHOT]
-      - Current Interface Language: ${currentLanguage} (Codes: en, hu, de, etc.)
-      - Native Gen Input: "${nativePrompt || ''}"
-      - Modals Open: Composite=${modalsState.composite}, OCR=${modalsState.ocr}, Docs=${modalsState.guide}, LangMenu=${modalsState.langMenu}
-      - Images in Queue: ${images.length}
-      `;
-    };
-
-    const getSystemInstruction = () => {
-        const isHu = currentLanguage === 'hu';
-
-        if (isHu) {
-            return `
-          SZEREPLŐ: BananaAI Rendszergazda és Profi Prompt Mérnök.
-          FELADAT: A felhasználói utasítások AZONNALI, KÉRDÉS NÉLKÜLI végrehajtása.
-          
-          FONTOS SZABÁLYOK:
-          
-          1. NYELVVÁLTÁS (Szigorú Kódolás):
-             - Ha a felhasználó nyelvet vált (pl. "Legyen angol", "Válts magyarra"), használd a 'manage_ui_state' eszközt 'CHANGE_LANG' akcióval.
-             - ÉRTÉKEK: 
-               - "Magyar" -> 'hu' (KÖTELEZŐEN kisbetűs kód!)
-               - "Angol" -> 'en'
-               - "Német" -> 'de'
-             - SOHA ne küldd a teljes nevet (pl. "Hungarian"), CSAK a kódot ('hu').
-
-          2. KÉPGENERÁLÁS (Extrém Engedelmesség):
-             - TRIGGEREK: "Generáld le", "Nyomd meg a gombot", "Mehet", "Csináld", "Start", "Készítsd el".
-             - AKCIÓ: Ha ezeket hallod, AZONNAL hívd meg a 'trigger_native_generation' eszközt.
-             - PROMPT BŐVÍTÉS: Ha a felhasználó rövid leírást ad (pl. "egy kutya"), te bővítsd ki profi angol leírássá ("Cinematic shot of a dog..."), és ezt küldd el a 'trigger_native_generation' prompt paraméterében.
-             - NE KÉRDEZZ VISSZA ("Biztosan?"). Csináld.
-
-          3. KONTEXTUS ÉRZÉKELÉS (Kompozit Mód):
-             - HA a 'Modals Open: Composite=true' (a rendszerállapotban):
-               - Minden "formátum", "felbontás", "képarány" vagy "prompt" változtatást a 'update_composite_settings' eszközzel hajts végre.
-               - KÉPARÁNYOK: "tizenhat kilenc" -> "16:9", "kilenc tizenhat" -> "9:16", "egy egy" -> "1:1".
-               - NE használd a 'update_dashboard'-ot, ha a Kompozit ablak nyitva van!
-               - BEZÁRÁS: Ha a felhasználó be akarja zárni ("Zárd be", "X", "Mégse"), használd: 'manage_ui_state' -> 'CLOSE_COMPOSITE'.
-             - HA a 'Modals Open: Composite=false':
-               - Használd a 'update_dashboard'-ot a globális beállításokhoz.
-
-          4. POD STUDIO (Print on Demand):
-             - TRIGGEREK: "Tedd rá egy pólóra", "Mutass bögréket", "Telefontokot szeretnék".
-             - AKCIÓ: Használd a 'control_pod_module' eszközt.
-             - PARANCSOK:
-               - "Nyisd meg a POD-ot" -> action: 'OPEN'
-               - "Mutass pólókat" -> action: 'SELECT_CATEGORY', category: 'tshirt'
-               - "Tedd rá egy modellre" -> action: 'APPLY_PRESET', presetId: 'model_street'
-
-          5. DOKUMENTÁCIÓ ÉS SEGÍTSÉG:
-             - Ha a felhasználó kérdést tesz fel a rendszerről ("Hogyan működik?", "Mit tud ez?"), használd a 'read_documentation' eszközt a válaszhoz.
-
-          6. CONTEXT AWARENESS (PhD Level):
-             - ALWAYS check 'Modals Open' in system state before acting.
-             - IF a modal is open (Composite, OCR, etc.), ONLY execute commands relevant to that modal.
-             - DO NOT execute global commands (like scrolling the main page) if a modal is blocking the view.
-
-          7. SCROLLING BEHAVIOR (Strict):
-             - DO NOT SCROLL unless the user EXPLICITLY asks ("Scroll down", "Go to bottom").
-             - NEVER auto-scroll after generation or other actions.
-             - If the user asks to scroll, do it ONCE. Do not keep scrolling.
-          `;
-        } else {
-            return `
-          ROLE: BananaAI System Admin & Expert Prompt Engineer.
-          TASK: Execute user commands IMMEDIATELY with ZERO hesitation.
-          
-          CRITICAL PROTOCOLS:
-          
-          1. LANGUAGE SWITCHING (Strict ISO Codes):
-             - Command: "Switch to Hungarian", "Change language to English".
-             - Tool: 'manage_ui_state' -> action: 'CHANGE_LANG'.
-             - MAPPING:
-               - "Hungarian" -> 'hu' (MUST use code!)
-               - "English" -> 'en'
-               - "German" -> 'de'
-             - NEVER send full names like "Hungarian".
-
-          2. IMAGE GENERATION (Atomic Execution):
-             - TRIGGERS: "Generate it", "Press the button", "Go", "Start", "Do it".
-             - ACTION: IMMEDIATELY call 'trigger_native_generation'.
-             - PROMPT EXPANSION: If user says "a cat", you MUST expand it to "Cinematic, photorealistic cat, 8k lighting..." inside the tool call.
-             - DO NOT ASK for confirmation. Just execute.
-
-          3. CONTEXT AWARENESS (Composite Mode):
-             - IF 'Modals Open: Composite=true' (in system state):
-               - Route ALL "format", "resolution", "aspect ratio", or "prompt" changes to 'update_composite_settings'.
-               - ASPECT RATIOS: "sixteen by nine" -> "16:9", "nine by sixteen" -> "9:16", "one by one" -> "1:1".
-               - DO NOT use 'update_dashboard' if Composite Modal is open!
-               - CLOSING: If user wants to close/cancel ("Close it", "X", "Cancel"), use: 'manage_ui_state' -> 'CLOSE_COMPOSITE'.
-             - IF 'Modals Open: Composite=false':
-               - Use 'update_dashboard' for global settings.
-
-          4. POD STUDIO (Print on Demand):
-             - TRIGGERS: "Put this on a t-shirt", "Show me mugs", "I want a phone case".
-             - ACTION: Use 'control_pod_module'.
-             - COMMANDS:
-               - "Open POD" -> action: 'OPEN'
-               - "Show t-shirts" -> action: 'SELECT_CATEGORY', category: 'tshirt'
-               - "Put it on a model" -> action: 'APPLY_PRESET', presetId: 'model_street'
-
-          5. DOCUMENTATION & HELP:
-             - If user asks about the system ("How does this work?", "What can I do?"), use 'read_documentation' to get the answer.
-
-          6. CONTEXT AWARENESS (PhD Level):
-             - ALWAYS check 'Modals Open' in system state before acting.
-             - IF a modal is open, ONLY execute commands relevant to that modal.
-             - DO NOT execute global commands (like scrolling) if a modal is focused.
-
-          7. SCROLLING BEHAVIOR (Strict):
-             - DO NOT SCROLL unless EXPLICITLY requested.
-             - NEVER auto-scroll after actions.
-          `;
-        }
-    };
-
-    const startSession = async () => {
-        if (isActive) return;
-        if (!apiKey) {
-            toast.error("API Key is required for Voice Assistant");
-            return;
-        }
-
-        setIsConnecting(true);
-
-        try {
-            const ai = new GoogleGenAI({ apiKey });
-
-            const tools = [{
-                functionDeclarations: [
-                    {
-                        name: 'get_system_state',
-                        description: 'Returns the current UI state (images, modals, input text). Use this to "see" the screen.',
-                        parameters: { type: Type.OBJECT, properties: {} }
+    // --- TOOL DEFINITIONS ---
+    // Memoized to prevent re-creation
+    const tools = useMemo<Tool[]>(() => [{
+        functionDeclarations: [
+            {
+                name: 'get_system_state',
+                description: 'CRITICAL: Call this whenever you need to know where you are, what is open, or the current scroll position.',
+                parameters: { type: Type.OBJECT, properties: {} }
+            },
+            {
+                name: 'control_scroll',
+                description: 'Controls page scrolling. START/STOP for continuous reading/scanning, STEP for jumps.',
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        action: { type: Type.STRING, enum: ['START', 'STOP', 'STEP', 'TOP', 'BOTTOM'] },
+                        direction: { type: Type.STRING, enum: ['UP', 'DOWN'] }
                     },
-                    {
-                        name: 'control_scroll',
-                        description: 'Controls scrolling. START/STOP for continuous smooth scrolling. STEP for a single large jump (loud command).',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                action: { type: Type.STRING, enum: ['START', 'STOP', 'STEP'], description: 'START=continuous, STOP=halt, STEP=single jump' },
-                                direction: { type: Type.STRING, enum: ['UP', 'DOWN'], description: 'Direction to scroll.' }
-                            },
-                            required: ['action']
-                        }
-                    },
-                    {
-                        name: 'update_dashboard',
-                        description: 'Updates existing images config in the queue (bulk or specific).',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                aspectRatio: { type: Type.STRING, enum: ['1:1', '16:9', '9:16', '4:3', '3:4'] },
-                                resolution: { type: Type.STRING, enum: ['1K', '2K', '4K'] },
-                                format: { type: Type.STRING, enum: ['JPG', 'PNG', 'WEBP'] },
-                                namingPattern: { type: Type.STRING, enum: ['ORIGINAL', 'RANDOM', 'SEQUENTIAL'] },
-                                prompt: { type: Type.STRING },
-                                targetIndex: { type: Type.STRING }
-                            }
-                        }
-                    },
-                    {
-                        name: 'update_composite_settings',
-                        description: 'Updates settings specifically for the Composite Generation Modal when it is open.',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                aspectRatio: { type: Type.STRING, enum: ['1:1', '16:9', '9:16', '4:3', '3:4'] },
-                                resolution: { type: Type.STRING, enum: ['1K', '2K', '4K'] },
-                                format: { type: Type.STRING, enum: ['JPG', 'PNG', 'WEBP'] },
-                                prompt: { type: Type.STRING }
-                            }
-                        }
-                    },
-                    {
-                        name: 'update_native_input',
-                        description: 'Types text into the native generator bar or changes its settings.',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                prompt: { type: Type.STRING },
-                                aspectRatio: { type: Type.STRING, enum: ['1:1', '16:9', '9:16'] },
-                                resolution: { type: Type.STRING, enum: ['1K', '2K', '4K'] },
-                                format: { type: Type.STRING, enum: ['JPG', 'PNG', 'WEBP'] }
-                            }
-                        }
-                    },
-                    {
-                        name: 'trigger_native_generation',
-                        description: 'PRESSES THE GENERATE BUTTON. Can optionally override prompt and settings immediately.',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                prompt: { type: Type.STRING, description: "The FULL, professionally enhanced prompt to generate." },
-                                aspectRatio: { type: Type.STRING },
-                                resolution: { type: Type.STRING },
-                                format: { type: Type.STRING }
-                            }
-                        }
-                    },
-                    {
-                        name: 'perform_item_action',
-                        description: 'Performs specific actions on single images in the queue.',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                action: { type: Type.STRING, enum: ['REMOVE', 'EDIT', 'DOWNLOAD', 'REMASTER', 'CREATE_VARIANTS', 'SHARE'] },
-                                targetIndex: { type: Type.STRING, description: "1-based index of the image." }
-                            },
-                            required: ['action', 'targetIndex']
-                        }
-                    },
-                    {
-                        name: 'apply_settings_globally',
-                        description: 'Applies global settings to all images.',
-                        parameters: { type: Type.OBJECT, properties: {} }
-                    },
-                    {
-                        name: 'start_processing_queue',
-                        description: 'Starts processing all pending images.',
-                        parameters: { type: Type.OBJECT, properties: {} }
-                    },
-                    {
-                        name: 'analyze_images',
-                        description: 'Runs OCR analysis.',
-                        parameters: { type: Type.OBJECT, properties: {} }
-                    },
-                    {
-                        name: 'request_visual_context',
-                        description: 'Asks to SEE the images (pixels).',
-                        parameters: { type: Type.OBJECT, properties: {} }
-                    },
-                    {
-                        name: 'manage_ui_state',
-                        description: 'Opens modals, menus or CHANGES LANGUAGE.',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                action: { type: Type.STRING, enum: ['OPEN_COMPOSITE', 'OPEN_OCR', 'OPEN_DOCS', 'CHANGE_LANG', 'OPEN_LANG_MENU', 'CLOSE_COMPOSITE', 'CLOSE_OCR', 'CLOSE_DOCS', 'CLOSE_ALL'] },
-                                value: { type: Type.STRING, description: "For CHANGE_LANG, pass the ISO code (e.g. 'hu', 'en')." }
-                            }
-                        }
-                    },
-                    {
-                        name: 'manage_queue_actions',
-                        description: 'Global queue actions (Clear All, Download All).',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                action: { type: Type.STRING, enum: ['CLEAR_ALL', 'DOWNLOAD_ZIP'] }
-                            }
-                        }
-                    },
-                    {
-                        name: 'read_documentation',
-                        description: 'Returns the full system documentation text for the current language. Use this when user asks to read, explain, or summarize the docs.',
-                        parameters: { type: Type.OBJECT, properties: {} }
-                    },
-                    {
-                        name: 'control_pod_module',
-                        description: 'Controls the Print-on-Demand (POD) module. Open/Close, Select Category, Apply Preset.',
-                        parameters: {
-                            type: Type.OBJECT,
-                            properties: {
-                                action: { type: Type.STRING, enum: ['OPEN', 'CLOSE', 'SELECT_CATEGORY', 'APPLY_PRESET'] },
-                                category: { type: Type.STRING, enum: Object.keys(POD_PRESETS) },
-                                presetId: { type: Type.STRING, description: "The ID of the preset prompt to apply (e.g., 'model_street')." }
-                            },
-                            required: ['action']
-                        }
-                    }
-                ]
-            }];
-
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-            audioContextRef.current = audioContext;
-            const outputNode = audioContext.createGain();
-            outputNode.connect(audioContext.destination);
-
-
-
-
-            let stream;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            } catch (err) {
-                console.error("Microphone access denied:", err);
-                toast.error("Microphone access denied. Please check your browser settings.");
-                setIsConnecting(false);
-                return;
-            }
-            streamRef.current = stream;
-
-            // Get the actual sample rate from the microphone stream to prevent mismatch errors
-            const streamSettings = stream.getAudioTracks()[0].getSettings();
-            const streamSampleRate = streamSettings.sampleRate || 48000; // Fallback to 48k if undefined
-
-            const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: streamSampleRate });
-            inputAudioContextRef.current = inputAudioContext;
-
-            const analyzer = inputAudioContext.createAnalyser();
-            const visualizerSource = inputAudioContext.createMediaStreamSource(stream);
-            visualizerSource.connect(analyzer);
-
-            const updateVolume = () => {
-                if (inputAudioContext.state === 'closed') return;
-                const dataArray = new Uint8Array(analyzer.frequencyBinCount);
-                analyzer.getByteFrequencyData(dataArray);
-                const avg = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                setVolume(avg);
-                requestAnimationFrame(updateVolume);
-            };
-            updateVolume();
-
-            // @ts-ignore - Ignoring type error for callbacks as requested by user
-            const sessionPromise = ai.live.connect({
-                model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-                config: {
-                    tools: tools,
-                    systemInstruction: getSystemInstruction(),
-                    responseModalities: [Modality.AUDIO],
-                },
-                callbacks: {
-                    onopen: () => {
-                        setIsActive(true);
-                        setIsConnecting(false);
-
-                        // Send initial state
-                        if (sessionPromise) {
-                            sessionPromise.then(s => {
-                                s.sendToolResponse({
-                                    functionResponses: {
-                                        name: 'system_state_report',
-                                        id: 'init-state-' + Date.now(),
-                                        response: { result: generateStateReport() }
-                                    }
-                                });
-                            }).catch(() => { });
-                        }
-
-                        // Process Input Audio
-                        const source = inputAudioContext.createMediaStreamSource(stream);
-                        sourceRef.current = source;
-
-                        // Use ScriptProcessor for capturing raw PCM
-                        const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
-                        processorRef.current = scriptProcessor;
-
-                        scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-                            const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
-                            // Pass current hardware sample rate to the blob creator
-                            const pcmBlob = createBlob(inputData, inputAudioContext.sampleRate);
-                            sessionPromise.then((session) => {
-                                session.sendRealtimeInput({ media: pcmBlob });
-                            });
-                        };
-
-                        source.connect(scriptProcessor);
-                        scriptProcessor.connect(inputAudioContext.destination);
-
-                        sessionRef.current = sessionPromise;
-                    },
-                    onmessage: async (message: LiveServerMessage) => {
-                        if (message.toolCall) {
-                            setIsExecuting(true);
-                            const functionResponses = [];
-                            for (const fc of message.toolCall.functionCalls) {
-                                const args = fc.args as any;
-                                let result: { ok: boolean; message?: string } = { ok: true };
-
-                                if (fc.name === 'get_system_state') {
-                                    result = { ok: true, message: generateStateReport() };
-                                }
-                                else if (fc.name === 'control_scroll') {
-                                    if (args.action === 'START') {
-                                        setScrollDirection(args.direction || 'DOWN');
-                                        setIsScrolling(true);
-                                        result = { ok: true, message: `Scrolling ${args.direction || 'DOWN'} started.` };
-                                    } else if (args.action === 'STEP') {
-                                        setIsScrolling(false); // Ensure continuous is stopped
-                                        const amount = args.direction === 'UP' ? -600 : 600;
-                                        window.scrollBy({ top: amount, behavior: 'smooth' });
-                                        result = { ok: true, message: `Stepped ${args.direction || 'DOWN'}` };
-                                    } else {
-                                        setIsScrolling(false);
-                                        result = { ok: true, message: "Scrolling stopped." };
-                                    }
-                                }
-                                else if (fc.name === 'update_dashboard') {
-                                    onCommandRef.current(args);
-                                    result = { ok: true, message: "Dashboard updated." };
-                                } else if (fc.name === 'update_composite_settings') {
-                                    if (onCompositeUpdateRef.current) {
-                                        onCompositeUpdateRef.current(args);
-                                        result = { ok: true, message: "Composite settings updated." };
-                                    } else {
-                                        result = { ok: false, message: "Composite update handler not available." };
-                                    }
-                                } else if (fc.name === 'update_native_input') {
-                                    onCommandRef.current({ updateNative: true, ...args });
-                                    result = { ok: true, message: "Native input updated." };
-                                } else if (fc.name === 'trigger_native_generation') {
-                                    onCommandRef.current({
-                                        triggerNative: true,
-                                        prompt: args.prompt,
-                                        aspectRatio: args.aspectRatio,
-                                        resolution: args.resolution,
-                                        format: args.format
-                                    });
-                                    result = { ok: true, message: "Generation started successfully." };
-                                } else if (fc.name === 'perform_item_action') {
-                                    onCommandRef.current({
-                                        itemAction: args.action,
-                                        targetIndex: args.targetIndex
-                                    });
-                                    result = { ok: true, message: `Action ${args.action} performed on item ${args.targetIndex}.` };
-                                } else if (fc.name === 'apply_settings_globally') {
-                                    onApplyAllRef.current();
-                                    result = { ok: true, message: "Applied globally." };
-                                } else if (fc.name === 'start_processing_queue') {
-                                    onCommandRef.current({ startQueue: true });
-                                    result = { ok: true, message: "Queue started." };
-                                } else if (fc.name === 'analyze_images') {
-                                    onAuditRef.current();
-                                    result = { ok: true, message: "Audit running." };
-                                } else if (fc.name === 'request_visual_context') {
-                                    // Visual context logic
-                                } else if (fc.name === 'manage_ui_state') {
-                                    onCommandRef.current({ uiAction: args.action, value: args.value });
-                                    result = { ok: true, message: `UI Action ${args.action} executed.` };
-                                } else if (fc.name === 'read_documentation') {
-                                    // @ts-ignore
-                                    const docData = resources[currentLanguage]?.translation || resources['en'].translation;
-                                    const fullText = Object.keys(docData)
-                                        .filter(k => k.startsWith('guide'))
-                                        .map(k => docData[k])
-                                        .join('\n');
-                                    result = { ok: true, message: fullText };
-                                } else if (fc.name === 'control_pod_module') {
-                                    const { action, category, presetId } = args;
-                                    if (action === 'OPEN') {
-                                        onCommandRef.current({ uiAction: 'OPEN_COMPOSITE', tab: 'pod' });
-                                        result = { ok: true, message: "Opening POD Studio." };
-                                    } else if (action === 'CLOSE') {
-                                        onCommandRef.current({ uiAction: 'CLOSE_COMPOSITE' });
-                                        result = { ok: true, message: "Closing POD Studio." };
-                                    } else if (action === 'SELECT_CATEGORY') {
-                                        onCommandRef.current({ uiAction: 'OPEN_COMPOSITE', tab: 'pod', category: category });
-                                        result = { ok: true, message: `Selected category: ${category}` };
-                                    } else if (action === 'APPLY_PRESET') {
-                                        // Find the preset text
-                                        let presetText = '';
-                                        for (const cat of Object.values(POD_PRESETS)) {
-                                            const p = cat.prompts.find(pr => pr.id === presetId);
-                                            if (p) {
-                                                // @ts-ignore
-                                                presetText = p.text[currentLanguage] || p.text.en;
-                                                break;
-                                            }
-                                        }
-                                        if (presetText) {
-                                            if (onCompositeUpdateRef.current) {
-                                                onCompositeUpdateRef.current({ prompt: presetText });
-                                                result = { ok: true, message: `Applied preset: ${presetId}` };
-                                            } else {
-                                                result = { ok: false, message: "Composite update handler not available." };
-                                            }
-                                        } else {
-                                            result = { ok: false, message: `Preset ${presetId} not found.` };
-                                        }
-                                    }
-                                }
-
-                                if (functionResponses.length > 0) {
-                                    sessionPromise.then(s => s.sendToolResponse({ functionResponses }));
-                                }
-                                setTimeout(() => setIsExecuting(false), 500);
-                            }
-                        }
-
-                        const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                        if (base64Audio) {
-                            try {
-                                nextStartTimeRef.current = Math.max(nextStartTimeRef.current, audioContext.currentTime);
-                                const audioBuffer = await decodeAudioData(decode(base64Audio), audioContext, 24000, 1);
-                                const source = audioContext.createBufferSource();
-                                source.buffer = audioBuffer;
-                                source.connect(outputNode);
-                                source.start(nextStartTimeRef.current);
-                                nextStartTimeRef.current += audioBuffer.duration;
-                                sourcesRef.current.add(source);
-                                source.onended = () => sourcesRef.current.delete(source);
-                            } catch (e) { }
-                        }
-                    },
-                    onclose: stopSession,
-                    onerror: stopSession
+                    required: ['action']
                 }
-            });
+            },
+            {
+                name: 'manage_ui_state',
+                description: 'Opens/Closes modals, menus, or changes language.',
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        action: { type: Type.STRING, enum: ['OPEN_COMPOSITE', 'OPEN_OCR', 'OPEN_DOCS', 'CHANGE_LANG', 'CLOSE_ALL', 'CLOSE_COMPOSITE', 'CLOSE_OCR'] },
+                        value: { type: Type.STRING, description: "Optional value (e.g., lang code 'hu')" }
+                    }
+                }
+            },
+            {
+                name: 'trigger_action',
+                description: 'Executes app-specific commands like generating images, running audits, etc.',
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        command: { type: Type.STRING, enum: ['GENERATE', 'AUDIT', 'APPLY_ALL', 'CLEAR_QUEUE', 'DOWNLOAD'] },
+                        payload: { type: Type.STRING, description: "JSON stringified payload if needed" }
+                    }
+                }
+            },
+            {
+                name: 'update_composite',
+                description: 'Updates the Composite Generator settings ONLY when that modal is open.',
+                parameters: {
+                    type: Type.OBJECT,
+                    properties: {
+                        prompt: { type: Type.STRING },
+                        aspectRatio: { type: Type.STRING },
+                        resolution: { type: Type.STRING }
+                    }
+                }
+            }
+        ]
+    }], []);
 
-        } catch (e) {
-            console.error(e);
-            setIsConnecting(false);
+    // --- TOOL HANDLER ---
+    // This function runs when the AI decides to call a tool
+    const handleToolCall = async (name: string, args: any) => {
+        const { onCommand, onAudit, onApplyAll, onCompositeUpdate, modalsState, images } = propsRef.current;
+
+        switch (name) {
+            case 'get_system_state':
+                // PhD Level Context Awareness: Calculate exact position
+                const scrollPct = Math.round((window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100);
+                const visibleState = {
+                    language: propsRef.current.currentLanguage,
+                    modals: modalsState,
+                    imagesInQueue: images?.length || 0,
+                    scroll: {
+                        isAtTop: window.scrollY === 0,
+                        isAtBottom: window.innerHeight + window.scrollY >= document.body.scrollHeight - 10,
+                        percentage: isNaN(scrollPct) ? 0 : scrollPct,
+                        direction: isScrolling ? scrollDirection : 'STOPPED'
+                    }
+                };
+                return JSON.stringify(visibleState);
+
+            case 'control_scroll':
+                if (args.action === 'START') {
+                    setScrollDirection(args.direction || 'DOWN');
+                    setIsScrolling(true);
+                    return "Scrolling started.";
+                } else if (args.action === 'STOP') {
+                    setIsScrolling(false);
+                    return "Scrolling stopped.";
+                } else if (args.action === 'STEP') {
+                    const amt = args.direction === 'UP' ? -window.innerHeight * 0.7 : window.innerHeight * 0.7;
+                    window.scrollBy({ top: amt, behavior: 'smooth' });
+                    return "Scrolled one page step.";
+                } else if (args.action === 'TOP') {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    return "Jumped to top.";
+                } else if (args.action === 'BOTTOM') {
+                    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                    return "Jumped to bottom.";
+                }
+                break;
+
+            case 'manage_ui_state':
+                onCommand({ uiAction: args.action, value: args.value });
+                return "UI State updated.";
+
+            case 'trigger_action':
+                if (args.command === 'GENERATE') onCommand({ triggerNative: true });
+                if (args.command === 'AUDIT') onAudit();
+                if (args.command === 'APPLY_ALL') onApplyAll();
+                if (args.command === 'CLEAR_QUEUE') onCommand({ action: 'CLEAR_ALL' });
+                return `Command ${args.command} executed.`;
+
+            case 'update_composite':
+                if (onCompositeUpdate && modalsState?.composite) {
+                    onCompositeUpdate(args);
+                    return "Composite settings updated.";
+                }
+                return "Error: Composite modal is not open.";
+
+            default:
+                return "Tool not found.";
         }
     };
 
+    // --- SYSTEM PROMPT ---
+    const getSystemInstruction = () => {
+        const lang = propsRef.current.currentLanguage;
+        // Dynamic prompt based on language
+        return `
+        You are BananaAI, an advanced, omniscient interface assistant.
+        
+        CURRENT LANGUAGE: ${lang}
+        
+        CORE PROTOCOLS:
+        1. CONTEXT AWARENESS: Before executing actions, you often check 'get_system_state' to know if modals are open or where you are on the page.
+        2. SCROLLING: You can scroll the page. If the user says "Read this to me" or "Look through", use 'control_scroll' to scan. Always know if you are at the top or bottom.
+        3. MODALS: You can open and close ANY modal (Composite, OCR, Docs). If the user wants to change settings, ensure the relevant modal is open first.
+        4. PRECISE CONTROL: When generating images, do not ask for confirmation. Just do it.
+        
+        BEHAVIOR:
+        - Concise, professional, helpful.
+        - If the user asks to "Go down", assume they want to scroll.
+        - If the user asks "Where are we?", use 'get_system_state' and explain the UI state.
+        `;
+    };
+
+    // --- INIT HOOK ---
+    const { connect, disconnect, status, volume, isProcessing } = useGeminiLive({
+        apiKey,
+        systemInstruction: getSystemInstruction(),
+        tools,
+        onToolCall: handleToolCall
+    });
+
+    // --- RENDER ---
     return (
-        <>
-            <motion.div
-                drag
-                dragMomentum={false}
-                className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2"
+        <motion.div
+            drag
+            dragMomentum={false}
+            whileDrag={{ scale: 1.1 }}
+            className="fixed bottom-6 right-6 z-[9999] flex flex-col items-end gap-3 touch-none"
+        >
+            <AnimatePresence>
+                {status === 'connected' && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.5 }}
+                        className="flex flex-col items-end gap-2"
+                    >
+                        {/* Status Bubble */}
+                        <div className="bg-slate-900/90 backdrop-blur-md border border-emerald-500/30 text-emerald-400 text-xs px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3">
+                            {isProcessing ? (
+                                <>
+                                    <Sparkles className="w-3 h-3 animate-spin text-purple-400" />
+                                    <span className="text-purple-200 font-medium">Processing...</span>
+                                </>
+                            ) : isScrolling ? (
+                                <>
+                                    {scrollDirection === 'UP' ? <ChevronUp className="w-3 h-3 animate-bounce" /> : <ChevronDown className="w-3 h-3 animate-bounce" />}
+                                    <span>Scrolling...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex gap-0.5 items-end h-3">
+                                        <motion.div animate={{ height: Math.max(4, volume * 0.8) }} className="w-1 bg-emerald-400 rounded-full" />
+                                        <motion.div animate={{ height: Math.max(6, volume * 1.2) }} className="w-1 bg-emerald-400 rounded-full" />
+                                        <motion.div animate={{ height: Math.max(4, volume * 0.8) }} className="w-1 bg-emerald-400 rounded-full" />
+                                    </div>
+                                    <span>Listening</span>
+                                </>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Main Button */}
+            <motion.button
+                onClick={status === 'connected' ? disconnect : connect}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`
+                    relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300
+                    ${status === 'connected'
+                        ? 'bg-red-500 hover:bg-red-600 ring-4 ring-red-500/20'
+                        : status === 'connecting'
+                            ? 'bg-slate-700 cursor-wait'
+                            : 'bg-gradient-to-br from-emerald-500 to-teal-600 hover:shadow-emerald-500/50 ring-0 hover:ring-4 ring-emerald-500/30'
+                    }
+                `}
             >
-                {isActive && (
-                    <div className="flex flex-col gap-2 items-end">
-                        {isExecuting && (
-                            <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="bg-purple-900/80 backdrop-blur-md border border-purple-500/30 text-purple-200 text-xs px-3 py-1.5 rounded-full shadow-xl flex items-center gap-2">
-                                <Sparkles className="w-3 h-3 text-purple-400 animate-spin" />
-                                Processing Command...
-                            </motion.div>
-                        )}
-                        <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="bg-slate-900/80 backdrop-blur-md border border-emerald-500/30 text-emerald-400 text-xs px-3 py-1.5 rounded-full shadow-xl flex items-center gap-2">
-                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-                            Connected ({Math.round(volume)}%)
-                        </motion.div>
-                    </div>
+                {status === 'connected' && (
+                    <motion.div
+                        className="absolute inset-0 rounded-full border-2 border-white/40"
+                        animate={{ scale: 1 + (volume / 100) * 0.5, opacity: 1 - (volume / 200) }}
+                        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                    />
                 )}
 
-                <button
-                    onClick={isActive ? stopSession : startSession}
-                    className={`
-                    relative w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all
-                    ${isActive
-                            ? 'bg-red-500 hover:bg-red-600'
-                            : isConnecting
-                                ? 'bg-slate-700'
-                                : 'bg-gradient-to-br from-emerald-500 to-teal-600 hover:scale-110'
-                        }
-                `}
-                >
-                    {isActive && (
-                        <div className="absolute inset-0 rounded-full border-2 border-white/30" style={{ transform: `scale(${1 + volume / 100})` }}></div>
-                    )}
-                    {!isActive && !isConnecting && (
-                        <div className="absolute inset-0 rounded-full bg-emerald-500/30 voice-pulse -z-10"></div>
-                    )}
-                    {isConnecting ? <Loader2 className="w-8 h-8 text-white animate-spin" /> : isActive ? <Mic className="w-8 h-8 text-white" /> : <MicOff className="w-8 h-8 text-white/80" />}
-                </button>
-            </motion.div>
-        </>
+                {status === 'connecting' ? (
+                    <Loader2 className="w-7 h-7 text-white animate-spin" />
+                ) : status === 'connected' ? (
+                    <Mic className="w-7 h-7 text-white drop-shadow-md" />
+                ) : (
+                    <MicOff className="w-7 h-7 text-white/90" />
+                )}
+            </motion.button>
+        </motion.div>
     );
 };
