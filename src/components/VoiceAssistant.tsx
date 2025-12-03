@@ -233,8 +233,15 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
           5. DOKUMENTÁCIÓ ÉS SEGÍTSÉG:
              - Ha a felhasználó kérdést tesz fel a rendszerről ("Hogyan működik?", "Mit tud ez?"), használd a 'read_documentation' eszközt a válaszhoz.
 
-          6. MINDENT LÁTÓ SZEM:
-             - Használd a 'get_system_state'-et, ha nem tudod, mi van a képernyőn.
+          6. CONTEXT AWARENESS (PhD Level):
+             - ALWAYS check 'Modals Open' in system state before acting.
+             - IF a modal is open (Composite, OCR, etc.), ONLY execute commands relevant to that modal.
+             - DO NOT execute global commands (like scrolling the main page) if a modal is blocking the view.
+
+          7. SCROLLING BEHAVIOR (Strict):
+             - DO NOT SCROLL unless the user EXPLICITLY asks ("Scroll down", "Go to bottom").
+             - NEVER auto-scroll after generation or other actions.
+             - If the user asks to scroll, do it ONCE. Do not keep scrolling.
           `;
         } else {
             return `
@@ -278,8 +285,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
           5. DOCUMENTATION & HELP:
              - If user asks about the system ("How does this work?", "What can I do?"), use 'read_documentation' to get the answer.
 
-          6. CONTEXT AWARENESS:
-             - Use 'get_system_state' to see active modals or input text.
+          6. CONTEXT AWARENESS (PhD Level):
+             - ALWAYS check 'Modals Open' in system state before acting.
+             - IF a modal is open, ONLY execute commands relevant to that modal.
+             - DO NOT execute global commands (like scrolling) if a modal is focused.
+
+          7. SCROLLING BEHAVIOR (Strict):
+             - DO NOT SCROLL unless EXPLICITLY requested.
+             - NEVER auto-scroll after actions.
           `;
         }
     };
@@ -496,15 +509,17 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                         setIsConnecting(false);
 
                         // Send initial state
-                        sessionPromise.then(s => {
-                            s.sendToolResponse({
-                                functionResponses: {
-                                    name: 'system_state_report',
-                                    id: 'init-state-' + Date.now(),
-                                    response: { result: generateStateReport() }
-                                }
-                            });
-                        }).catch(() => { });
+                        if (sessionPromise) {
+                            sessionPromise.then(s => {
+                                s.sendToolResponse({
+                                    functionResponses: {
+                                        name: 'system_state_report',
+                                        id: 'init-state-' + Date.now(),
+                                        response: { result: generateStateReport() }
+                                    }
+                                });
+                            }).catch(() => { });
+                        }
 
                         // Process Input Audio
                         const source = inputAudioContext.createMediaStreamSource(stream);
