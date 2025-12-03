@@ -810,6 +810,16 @@ const App: React.FC = () => {
                 switch (cmd.itemAction) {
                     case 'REMOVE': removeImage(targetId); break;
                     case 'EDIT': setEditingId(targetId); break;
+                    case 'SELECT':
+                        // Toggle selection
+                        setCompositeSelectedIds(prev => {
+                            const newSet = new Set(prev);
+                            if (newSet.has(targetId)) newSet.delete(targetId);
+                            else newSet.add(targetId);
+                            return newSet;
+                        });
+                        toast.success(`Toggled selection for image ${cmd.targetIndex}`);
+                        break;
                     case 'DOWNLOAD':
                         // Trigger download for specific item
                         const link = document.createElement('a');

@@ -106,7 +106,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     const [scrollPosition, setScrollPosition] = useState({ top: 0, percent: 0 });
     const [viewportElements, setViewportElements] = useState<ViewportElement[]>([]);
     const [showVisualAssist, setShowVisualAssist] = useState(false);
-    const [confirmingShutdown, setConfirmingShutdown] = useState(false);
+    const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
 
     // Refs
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -245,6 +245,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
    - Language: ${currentLanguage} (${resources[currentLanguage]?.translation?.language_name || 'unknown'})
    - Scroll Position: ${scrollPosition.top}px (${scrollPosition.percent}% of page)
    - Viewport Contains: ${JSON.stringify(viewportSummary)}
+   - CURRENTLY FOCUSED IMAGE: ${focusedIndex ? `#${focusedIndex}` : 'NONE'}
 
 2. MODAL STATES:
    - Composite Modal: ${modalsState.composite ? 'OPEN' : 'closed'}
@@ -269,7 +270,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
 [END OF STATE REPORT]
         `.trim();
-    }, [currentLanguage, scrollPosition, viewportElements, modalsState, nativePrompt, isNativeGenerating, images.length, batchCompleteTrigger, showVisualAssist]);
+    }, [currentLanguage, scrollPosition, viewportElements, modalsState, nativePrompt, isNativeGenerating, images.length, batchCompleteTrigger, showVisualAssist, focusedIndex]);
 
     // Enhanced System Instruction with PhD-level context awareness
     const getSystemInstruction = useCallback(() => {
@@ -280,59 +281,46 @@ You are the Voice Interface of BananaAI. You have COMPLETE control over the inte
 
 YOUR CAPABILITIES:
 1. SCREEN AWARENESS: You know exactly what's visible on screen (images, buttons, inputs, modals)
-2. PRECISE NAVIGATION: You scroll in STEPS (half screen or quarter screen), never continuously.
-3. MODAL MASTERY: You can open/close ANY modal window and interact with its contents
-4. ELEMENT CONTROL: You can click any button, fill any input, and modify any visible element
-5. CONTEXT SWITCHING: You maintain awareness of which context you're in (main page vs modal)
+2. PRECISE NAVIGATION: You scroll in STEPS. You can jump to specific images by index.
+3. PERSISTENT FOCUS: When you navigate to an image, you are FOCUSED on it. All subsequent commands apply to THAT image until the user moves elsewhere.
+4. MODAL MASTERY: You can open/close ANY modal window and interact with its contents
+5. ELEMENT CONTROL: You can click any button, fill any input, and modify any visible element
+
+PROMPT ROUTING LOGIC:
+- If Queue is EMPTY: "Write prompt" -> update_native_input
+- If Queue HAS ITEMS: "Write prompt" -> update_dashboard (targeting FOCUSED image or #1)
+- If user says "Write to native": -> update_native_input (Explicit override)
 
 SCROLLING PROTOCOL:
-- "Scroll down" -> control_scroll(direction="DOWN", intensity="NORMAL") (approx 50% screen)
-- "Scroll a little down" -> control_scroll(direction="DOWN", intensity="SMALL") (approx 25% screen)
-- "Scroll up" -> control_scroll(direction="UP", intensity="NORMAL")
-- "Scroll to image 5" -> navigate_to_position(position="image 5")
-- NEVER use continuous scrolling. Always discrete steps.
+- "Scroll down" -> control_scroll(direction="DOWN", intensity="NORMAL")
+- "Scroll to image 5" -> navigate_to_position(position="image 5") -> SETS FOCUS TO 5
+- "Go to next image" -> navigate_to_position(position="image [focusedIndex + 1]")
+
+FOCUS PROTOCOL:
+- If user says "Change prompt to 'cat'", use the CURRENTLY FOCUSED image index.
+- If no image is focused, assume image #1 or ask for clarification.
+- Report focus: "I'm focusing on image 5. What should I do with it?"
 
 MODAL MANAGEMENT:
 - To open a modal: Use manage_ui_state with appropriate OPEN_ action
 - To close a modal: Use manage_ui_state with CLOSE_ action
 - When in a modal: All commands apply ONLY to that modal's context
-- Before acting: Check if relevant element is visible in viewport
-
-ELEMENT INTERACTION:
-- Use perform_element_action to interact with visible elements
-- Provide element_index from viewport analysis or describe element clearly
-- For inputs: Use update_element_value to modify content
-- For buttons: Use perform_element_action with 'CLICK'
 
 SHUTDOWN PROTOCOL:
 - If user says "Stop", "Exit", "Close yourself":
   1. Ask "Do you want to close me?" (or Hungarian equivalent)
   2. If user says "Yes": Call disconnect_assistant()
   3. If user says "No": Continue listening.
-
-CONTEXT PRESERVATION:
-- Always check scroll position and viewport contents before acting
-- If element isn't visible, scroll to make it visible first
-- Maintain focus: Don't switch contexts unless explicitly requested
-- Report changes: Always describe what you did and what changed
-
-SPECIAL COMMANDS:
-- "Show me what you see": Activates visual assist mode
-- "Where am I?": Reports detailed position and visible elements
-- "Take me to [section]": Navigates to named section
-- "Modify the third image": Uses index-based targeting
         `;
 
         const languageSpecific = isHu ? `
 MAGYAR NYELVŰ KONTEKSTUS:
 
-GÖRGETÉS PARANCSOK:
+GÖRGETÉS ÉS FÓKUSZ:
+- "Görgess a 3-as képhez": navigate_to_position "image 3" -> FÓKUSZ: 3
+- "Írd át a promptot 'kutya'": update_dashboard (targetIndex=3, prompt='kutya')
+- "Jelöld be": perform_item_action (action='SELECT', targetIndex=3)
 - "Görgess le": control_scroll DOWN NORMAL
-- "Görgess lejjebb egy kicsit": control_scroll DOWN SMALL
-- "Görgess fel": control_scroll UP NORMAL
-- "Ugorj az aljára": navigate_to_position 100%
-- "Menj a tetejére": navigate_to_position 0%
-- "Görgess a 3-as képhez": navigate_to_position "image 3"
 
 MODAL KEZELÉS:
 - "Nyisd meg a kompozit ablakot": manage_ui_state OPEN_COMPOSITE
@@ -346,21 +334,14 @@ ELEM INTERAKCIÓ:
 
 LEÁLLÍTÁS:
 - "Állj", "Lépj ki": Kérdezd meg: "Bezárjam magam?" -> Ha "Igen": disconnect_assistant()
-
-KONTEXTUS ÉRZÉKELÉS:
-- Mindig ellenőrizd: melyik ablak aktív, mi látható
-- Ha nem látszik az elem: görgess oda
-- Jelentkezz: "Most a képsorozat generáló ablakban vagyok"
         ` : `
 ENGLISH CONTEXT:
 
-SCROLLING COMMANDS:
+SCROLLING AND FOCUS:
+- "Scroll to image 3": navigate_to_position "image 3" -> FOCUS: 3
+- "Change prompt to 'dog'": update_dashboard (targetIndex=3, prompt='dog')
+- "Select it": perform_item_action (action='SELECT', targetIndex=3)
 - "Scroll down": control_scroll DOWN NORMAL
-- "Scroll a bit down": control_scroll DOWN SMALL
-- "Scroll up": control_scroll UP NORMAL
-- "Jump to bottom": navigate_to_position 100%
-- "Go to top": navigate_to_position 0%
-- "Scroll to image 3": navigate_to_position "image 3"
 
 MODAL MANAGEMENT:
 - "Open composite modal": manage_ui_state OPEN_COMPOSITE
@@ -374,11 +355,6 @@ ELEMENT INTERACTION:
 
 SHUTDOWN:
 - "Stop", "Exit": Ask "Do you want to close me?" -> If "Yes": disconnect_assistant()
-
-CONTEXT AWARENESS:
-- Always check: which window is active, what's visible
-- If element not visible: scroll to it first
-- Report: "I'm now in the batch generation modal"
         `;
 
         return baseInstruction + languageSpecific + generateStateReport();
@@ -404,11 +380,11 @@ CONTEXT AWARENESS:
             if (match) {
                 const index = parseInt(match[0]);
                 // Try to find by data-image-index (1-based usually in UI, check logic)
-                // Assuming data-image-index is 1-based from MainApp
                 const el = document.querySelector(`[data-image-index="${index}"]`);
                 if (el) {
                     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    return { ok: true, message: `Navigated to image ${index}` };
+                    setFocusedIndex(index); // SET FOCUS
+                    return { ok: true, message: `Navigated to image ${index}. Focus set to #${index}.` };
                 }
                 return { ok: false, message: `Image ${index} not found on screen` };
             }
@@ -510,7 +486,7 @@ CONTEXT AWARENESS:
                     },
                     {
                         name: 'navigate_to_position',
-                        description: 'Jump to specific position or element (e.g. "image 3").',
+                        description: 'Jump to specific position or element (e.g. "image 3"). Sets FOCUS on that element.',
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
@@ -550,7 +526,7 @@ CONTEXT AWARENESS:
                     },
                     {
                         name: 'update_dashboard',
-                        description: 'Updates existing images config in the queue (bulk or specific).',
+                        description: 'Updates existing images config in the queue (bulk or specific). Uses FOCUSED index if targetIndex not provided.',
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
@@ -559,7 +535,7 @@ CONTEXT AWARENESS:
                                 format: { type: Type.STRING, enum: ['JPG', 'PNG', 'WEBP'] },
                                 namingPattern: { type: Type.STRING, enum: ['ORIGINAL', 'RANDOM', 'SEQUENTIAL'] },
                                 prompt: { type: Type.STRING },
-                                targetIndex: { type: Type.STRING }
+                                targetIndex: { type: Type.STRING, description: "1-based index. If omitted, uses CURRENTLY FOCUSED image." }
                             }
                         }
                     },
@@ -604,14 +580,14 @@ CONTEXT AWARENESS:
                     },
                     {
                         name: 'perform_item_action',
-                        description: 'Performs specific actions on single images in the queue.',
+                        description: 'Performs specific actions on single images in the queue. Uses FOCUSED index if targetIndex not provided.',
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
-                                action: { type: Type.STRING, enum: ['REMOVE', 'EDIT', 'DOWNLOAD', 'REMASTER', 'CREATE_VARIANTS', 'SHARE'] },
-                                targetIndex: { type: Type.STRING, description: "1-based index of the image." }
+                                action: { type: Type.STRING, enum: ['REMOVE', 'EDIT', 'DOWNLOAD', 'REMASTER', 'CREATE_VARIANTS', 'SHARE', 'SELECT'] },
+                                targetIndex: { type: Type.STRING, description: "1-based index of the image. If omitted, uses CURRENTLY FOCUSED image." }
                             },
-                            required: ['action', 'targetIndex']
+                            required: ['action']
                         }
                     },
                     {
@@ -804,8 +780,10 @@ CONTEXT AWARENESS:
                                     result = { ok: true, message: `Scrolled ${direction} (${intensity})` };
                                 }
                                 else if (fc.name === 'update_dashboard') {
-                                    onCommandRef.current(args);
-                                    result = { ok: true, message: "Dashboard updated." };
+                                    // Use focused index if targetIndex is missing
+                                    const targetIndex = args.targetIndex || (focusedIndex ? focusedIndex.toString() : undefined);
+                                    onCommandRef.current({ ...args, targetIndex });
+                                    result = { ok: true, message: `Dashboard updated for item ${targetIndex || 'unknown'}.` };
                                 }
                                 else if (fc.name === 'update_composite_settings') {
                                     onCommandRef.current({ compositeAction: true, ...args });
@@ -820,8 +798,14 @@ CONTEXT AWARENESS:
                                     result = { ok: true, message: "Generation triggered." };
                                 }
                                 else if (fc.name === 'perform_item_action') {
-                                    onCommandRef.current({ itemAction: args.action, targetIndex: args.targetIndex });
-                                    result = { ok: true, message: `Item action ${args.action} performed.` };
+                                    // Use focused index if targetIndex is missing
+                                    const targetIndex = args.targetIndex || (focusedIndex ? focusedIndex.toString() : undefined);
+                                    if (targetIndex) {
+                                        onCommandRef.current({ itemAction: args.action, targetIndex });
+                                        result = { ok: true, message: `Item action ${args.action} performed on #${targetIndex}.` };
+                                    } else {
+                                        result = { ok: false, message: "No target image specified or focused." };
+                                    }
                                 }
                                 else if (fc.name === 'apply_settings_globally') {
                                     onApplyAllRef.current();
@@ -934,6 +918,7 @@ CONTEXT AWARENESS:
                 <div className="absolute top-4 right-4 bg-black/80 text-white p-4 rounded-lg font-mono text-xs">
                     <p>Scroll: {scrollPosition.top}px ({scrollPosition.percent}%)</p>
                     <p>Elements: {viewportElements.length}</p>
+                    <p className="text-yellow-400">Focused Image: {focusedIndex ? `#${focusedIndex}` : 'None'}</p>
                 </div>
             </div>
         );

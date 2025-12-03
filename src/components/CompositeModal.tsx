@@ -146,7 +146,7 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
             <>
               <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2"><ImageIcon className="w-4 h-4" /> {t('selectImages')} ({selectedIds.size})</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-8">
-                {images.map(img => {
+                {images.map((img, index) => {
                   const isSelected = selectedIds.has(img.id);
                   const displayUrl = img.processedUrl || img.previewUrl;
 
@@ -154,9 +154,16 @@ export const CompositeModal: React.FC<CompositeModalProps> = ({
                     <div
                       key={img.id}
                       onClick={() => toggleSelection(img.id)}
+                      data-image-index={index + 1}
                       className={`relative aspect-square rounded-xl overflow-hidden cursor-pointer border-2 transition-all group ${isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-slate-800 hover:border-slate-600'}`}
                     >
                       <img src={displayUrl} alt="" className={`w-full h-full object-cover transition-all ${isSelected ? 'opacity-100' : 'opacity-60 group-hover:opacity-80'}`} />
+
+                      {/* Visual Index Badge */}
+                      <div className="absolute top-2 left-2 bg-black/60 backdrop-blur text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-white/10 z-10">
+                        #{index + 1}
+                      </div>
+
                       <div className={`absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isSelected ? 'bg-emerald-500 text-white' : 'bg-slate-900/50 border border-slate-600'}`}>
                         {isSelected && <Check className="w-3 h-3" />}
                       </div>

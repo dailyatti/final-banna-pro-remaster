@@ -132,6 +132,8 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
     return (
         <motion.div
             layout
+            data-image-index={displayIndex}
+            data-image-id={item.id}
             className={`
         relative group rounded-2xl border transition-all duration-500 overflow-visible flex flex-col lg:flex-row z-0 hover:z-20
         ${isSuccess
