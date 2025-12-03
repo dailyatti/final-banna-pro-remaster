@@ -95,6 +95,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
     const [isExecuting, setIsExecuting] = useState(false);
     const [volume, setVolume] = useState(0);
     const [isScrolling, setIsScrolling] = useState(false);
+    const [scrollDirection, setScrollDirection] = useState<'UP' | 'DOWN'>('DOWN');
 
     // Smooth Scrolling Logic
     useEffect(() => {
@@ -102,7 +103,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
         const scrollLoop = () => {
             if (isScrolling) {
-                window.scrollBy({ top: 2, behavior: 'auto' }); // Slow, smooth scroll
+                const amount = scrollDirection === 'DOWN' ? 2 : -2;
+                window.scrollBy({ top: amount, behavior: 'auto' });
                 animationFrameId = requestAnimationFrame(scrollLoop);
             }
         };
@@ -112,7 +114,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
         }
 
         return () => cancelAnimationFrame(animationFrameId);
-    }, [isScrolling]);
+    }, [isScrolling, scrollDirection]);
 
     // Audio Contexts and Streams
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -337,11 +339,12 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                     },
                     {
                         name: 'control_scroll',
-                        description: 'Controls continuous smooth scrolling. Use START to begin scrolling down, and STOP to halt immediately.',
+                        description: 'Controls scrolling. START/STOP for continuous smooth scrolling. STEP for a single large jump (loud command).',
                         parameters: {
                             type: Type.OBJECT,
                             properties: {
-                                action: { type: Type.STRING, enum: ['START', 'STOP'], description: 'START to begin scrolling, STOP to halt.' }
+                                action: { type: Type.STRING, enum: ['START', 'STOP', 'STEP'], description: 'START=continuous, STOP=halt, STEP=single jump' },
+                                direction: { type: Type.STRING, enum: ['UP', 'DOWN'], description: 'Direction to scroll.' }
                             },
                             required: ['action']
                         }
@@ -575,8 +578,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
                                 }
                                 else if (fc.name === 'control_scroll') {
                                     if (args.action === 'START') {
+                                        setScrollDirection(args.direction || 'DOWN');
                                         setIsScrolling(true);
-                                        result = { ok: true, message: "Scrolling started. Say STOP to halt." };
+                                        result = { ok: true, message: `Scrolling ${args.direction || 'DOWN'} started.` };
+                                    } else if (args.action === 'STEP') {
+                                        setIsScrolling(false); // Ensure continuous is stopped
+                                        const amount = args.direction === 'UP' ? -600 : 600;
+                                        window.scrollBy({ top: amount, behavior: 'smooth' });
+                                        result = { ok: true, message: `Stepped ${args.direction || 'DOWN'}` };
                                     } else {
                                         setIsScrolling(false);
                                         result = { ok: true, message: "Scrolling stopped." };
