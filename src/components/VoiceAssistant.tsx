@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { Mic, MicOff, Loader2, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'react-hot-toast';
 import { ImageItem } from '../types';
 import { resources } from '../services/i18n';
 import { POD_PRESETS } from '../data/podPresets';
@@ -285,6 +286,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
 
     const startSession = async () => {
         if (isActive) return;
+        if (!apiKey) {
+            toast.error("API Key is required for Voice Assistant");
+            return;
+        }
+
         setIsConnecting(true);
 
         try {
@@ -441,11 +447,26 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({
             const outputNode = audioContext.createGain();
             outputNode.connect(audioContext.destination);
 
-            const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-            inputAudioContextRef.current = inputAudioContext;
 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (err) {
+                console.error("Microphone access denied:", err);
+                toast.error("Microphone access denied. Please check your browser settings.");
+                setIsConnecting(false);
+                return;
+            }
             streamRef.current = stream;
+
+            // Get the actual sample rate from the microphone stream to prevent mismatch errors
+            const streamSettings = stream.getAudioTracks()[0].getSettings();
+            const streamSampleRate = streamSettings.sampleRate || 48000; // Fallback to 48k if undefined
+
+            const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: streamSampleRate });
+            inputAudioContextRef.current = inputAudioContext;
 
             const analyzer = inputAudioContext.createAnalyser();
             const visualizerSource = inputAudioContext.createMediaStreamSource(stream);

@@ -47,7 +47,7 @@ const App: React.FC = () => {
     const { apiKey, isKeyValid } = useApiKey();
 
     useEffect(() => {
-        console.log("BananaAI Remaster Build: 2025-11-29T13:25:00 - Auth Screen Removed");
+        console.log("BananaAI Remaster Build: 2025-12-03T14:30:00 - Audio Fixes Applied");
     }, []);
     // const [isCheckingKey, setIsCheckingKey] = useState<boolean>(true); // Removed as context handles it
 
