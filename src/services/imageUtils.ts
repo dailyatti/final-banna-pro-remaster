@@ -44,6 +44,45 @@ export const fileToBase64 = (file: File): Promise<string> => {
 };
 
 /**
+ * Converts a URL (blob URL or data URL) to a Blob, optionally converting to target format
+ */
+export const convertUrlToBlob = async (url: string, targetFormat?: string): Promise<Blob> => {
+  const response = await fetch(url);
+  const blob = await response.blob();
+
+  // If no format conversion needed, return as-is
+  if (!targetFormat || blob.type === targetFormat) {
+    return blob;
+  }
+
+  // Convert to target format using canvas
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas context not available'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((convertedBlob) => {
+        if (convertedBlob) {
+          resolve(convertedBlob);
+        } else {
+          resolve(blob); // Fallback to original
+        }
+      }, targetFormat, 0.9);
+    };
+    img.onerror = () => resolve(blob); // Fallback on error
+    img.src = url;
+  });
+};
+
+/**
  * Converts a base64 image string to the target format (WebP/JPG/PNG).
  * Supports specifying the source mime type (defaulting to image/png if not provided, strictly for legacy compatibility, 
  * though providing it is recommended for SVGs).
@@ -90,10 +129,4 @@ export const convertImageFormat = (
     // Use the correct source MIME type prefix
     img.src = `data:${sourceMimeType};base64,${base64Data}`;
   });
-};
-
-export const convertUrlToBlob = async (url: string, format?: string): Promise<Blob> => {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  return blob;
 };

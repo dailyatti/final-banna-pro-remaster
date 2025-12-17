@@ -1,4 +1,6 @@
 
+export type ImageProvider = 'gemini' | 'openai';
+
 export enum OutputFormat {
   JPG = 'image/jpeg',
   PNG = 'image/png',
@@ -39,16 +41,16 @@ export interface ImageItem {
   file: File;
   previewUrl: string; // The original image preview (or cropped version)
   originalMeta: ImageFileMeta;
-  
+
   // Configuration for this specific image
   targetFormat: OutputFormat;
   targetResolution: AiResolution;
   targetAspectRatio: AspectRatio;
-  
+
   // Optional User Overrides
-  userPrompt?: string; 
-  customOutputName?: string; 
-  
+  userPrompt?: string;
+  customOutputName?: string;
+
   // Output state
   status: ProcessingStatus;
   processedUrl?: string;
@@ -66,7 +68,7 @@ export enum NamingPattern {
   SEQUENTIAL_SUFFIX = 'SEQUENTIAL_SUFFIX', // filename_01
 }
 
-export type LanguageCode = 'en' | 'hu' | 'de' | 'fr' | 'es' | 'it' | 'pt' | 'ru' | 'ja' | 'ko' | 'zh'; 
+export type LanguageCode = 'en' | 'hu' | 'de' | 'fr' | 'es' | 'it' | 'pt' | 'ru' | 'ja' | 'ko' | 'zh';
 
 declare global {
   interface AIStudio {

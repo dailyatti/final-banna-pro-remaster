@@ -6,7 +6,10 @@ import { fileToBase64, convertImageFormat } from "./imageUtils";
 const MODEL_NAME = 'gemini-3-pro-image-preview';
 const TEXT_MODEL = 'gemini-2.5-flash';
 
-export const processImageWithGemini = async (apiKey: string, item: ImageItem): Promise<{
+export const processImageWithGemini = async (
+  apiKey: string,
+  item: ImageItem
+): Promise<{
   processedUrl: string;
   width: number;
   height: number;
@@ -178,15 +181,14 @@ export const generateImageFromText = async (
 export const processGenerativeFill = async (
   apiKey: string,
   imageBlob: Blob,
-  format: OutputFormat = OutputFormat.PNG,
-  customPrompt?: string
+  format: OutputFormat = OutputFormat.PNG
 ): Promise<{ processedUrl: string; width: number; height: number; size: number }> => {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const buffer = await imageBlob.arrayBuffer();
     const base64Data = btoa(new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), ''));
 
-    const prompt = customPrompt || `
+    const prompt = `
       TASK: SEAMLESS TEXTURE EXTRAPOLATION (OUTPAINTING).
       
       1. VOID DETECTION: Treat white (#FFFFFF) pixels around the edge as NULL space.
