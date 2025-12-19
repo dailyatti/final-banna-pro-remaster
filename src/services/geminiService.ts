@@ -5,9 +5,9 @@ import { fileToBase64, convertImageFormat } from "./imageUtils";
 
 // PhD-Grade Model Configuration with Fallbacks
 const SAFE_MODELS = {
-  PREVIEW: 'gemini-2.0-flash-exp', // Fast, robust for previews
-  EDIT: 'gemini-2.0-flash-exp',    // Reliable for inpainting/editing
-  TEXT: 'gemini-2.0-flash-exp',    // Best for OCR and instruction following
+  PREVIEW: 'gemini-3-pro-image-preview', // User-specified primary model
+  EDIT: 'gemini-3-pro-image-preview',    // Applied to all image tasks per instruction
+  TEXT: 'gemini-2.0-flash-exp',          // Keeping robust text model for OCR
 } as const;
 
 // Helper to get safe model name, preventing 404s from env var typos
