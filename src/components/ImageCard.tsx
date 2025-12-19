@@ -134,15 +134,15 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
             layout
             data-image-index={displayIndex}
             data-image-id={item.id}
-            className={`
-        relative group rounded-2xl border transition-all duration-500 overflow-visible flex flex-col lg:flex-row z-0 hover:z-20
-        ${isSuccess
+            className={'relative group rounded-2xl border transition-all duration-500 overflow-visible flex flex-col lg:flex-row z-0 hover:z-20 ' +
+                (isSuccess
                     ? 'bg-[#0f172a]/80 border-emerald-500/30 shadow-[0_0_40px_rgba(16,185,129,0.05)]'
                     : isProcessing
                         ? 'bg-[#0f172a]/90 border-indigo-500/40 ring-1 ring-indigo-500/20 shadow-2xl'
                         : 'bg-[#0f172a]/60 border-slate-800 hover:border-slate-700 hover:shadow-xl hover:bg-[#0f172a]/80'
-                }
-    `}>
+                ) +
+                (isSelected ? ' ring-2 ring-emerald-500 border-emerald-500 shadow-[0_0_30px_rgba(16,185,129,0.15)] transform scale-[1.01]' : '')
+            }>
 
             {/* Remove Button */}
             <button onClick={() => onRemove(item.id)} className="absolute top-3 right-3 p-2 bg-slate-950/80 backdrop-blur text-slate-500 hover:text-red-400 rounded-lg z-30 opacity-0 group-hover:opacity-100 transition-all duration-200 border border-slate-800 hover:border-red-900/50">
@@ -160,11 +160,12 @@ export const ImageCard: React.FC<ImageCardProps> = ({ item, onUpdateConfig, onPr
                             e.stopPropagation();
                             onToggleSelection && onToggleSelection();
                         }}
-                        className={`w-6 h-6 border-2 rounded-md backdrop-blur-sm transition-all cursor-pointer relative z-10 flex items-center justify-center
-                                  ${isSelected
+                        className={'w-6 h-6 border-2 rounded-md backdrop-blur-sm transition-all cursor-pointer relative z-10 flex items-center justify-center ' +
+                            (isSelected
                                 ? 'bg-indigo-500 border-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]'
                                 : 'bg-slate-900/60 border-slate-400 hover:border-white hover:bg-slate-800/80'
-                            }`}
+                            )
+                        }
                     >
                         {isSelected && (
                             <Check className="w-4 h-4 text-white animate-in zoom-in duration-200" strokeWidth={3} />

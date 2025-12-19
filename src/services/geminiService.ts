@@ -3,8 +3,26 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AiResolution, ImageItem, AspectRatio, OutputFormat } from "../types";
 import { fileToBase64, convertImageFormat } from "./imageUtils";
 
-const MODEL_NAME = 'gemini-3-pro-image-preview';
-const TEXT_MODEL = 'gemini-2.5-flash';
+// PhD-Grade Model Configuration with Fallbacks
+const SAFE_MODELS = {
+  PREVIEW: 'gemini-2.0-flash-exp', // Fast, robust for previews
+  EDIT: 'gemini-2.0-flash-exp',    // Reliable for inpainting/editing
+  TEXT: 'gemini-2.0-flash-exp',    // Best for OCR and instruction following
+} as const;
+
+// Helper to get safe model name, preventing 404s from env var typos
+const getModelName = (type: keyof typeof SAFE_MODELS, envVar?: string): string => {
+  // If env var is explicitly set to a known problematic model, ignore it
+  if (envVar && envVar.includes('gemini-3-pro-image-edit')) {
+    console.warn(`[GeminiService] Blocked unsafe model name: ${envVar}. Unified to ${SAFE_MODELS[type]}`);
+    return SAFE_MODELS[type];
+  }
+  return envVar || SAFE_MODELS[type];
+};
+
+const MODEL_NAME = getModelName('PREVIEW', import.meta.env.VITE_GEMINI_IMAGE_MODEL);
+const TEXT_MODEL = getModelName('TEXT', import.meta.env.VITE_GEMINI_TEXT_MODEL);
+const EDIT_MODEL = getModelName('EDIT', import.meta.env.VITE_GEMINI_EDIT_MODEL);
 
 export const processImageWithGemini = async (apiKey: string, item: ImageItem): Promise<{
   processedUrl: string;
