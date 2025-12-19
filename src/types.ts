@@ -1,6 +1,4 @@
 
-export type ImageProvider = 'gemini' | 'openai';
-
 export enum OutputFormat {
   JPG = 'image/jpeg',
   PNG = 'image/png',

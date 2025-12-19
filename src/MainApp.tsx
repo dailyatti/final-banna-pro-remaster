@@ -36,15 +36,15 @@ import {
 } from './services/imageUtils';
 import { loadSessionImages, saveSessionImages } from './services/storageService';
 import {
-    generateImage,
-    processImage,
-    processComposite,
+    processImageWithGemini,
+    generateImageFromText,
+    processCompositeGeneration,
     processGenerativeFill,
     extractTextFromImages
-} from './services/imageProviderFactory';
+} from './services/geminiService';
 const App: React.FC = () => {
     const { t, i18n } = useTranslation();
-    const { apiKey, isKeyValid, geminiApiKey, activeProvider } = useApiKey();
+    const { apiKey, isKeyValid } = useApiKey();
 
     useEffect(() => {
         console.log("BananaAI Remaster Build: 2025-12-03T14:30:00 - Audio Fixes Applied");
@@ -392,7 +392,7 @@ const App: React.FC = () => {
                 return newArr;
             });
 
-            const result = await processImage(activeProvider, apiKey!, variantItem);
+            const result = await processImageWithGemini(apiKey!, variantItem);
 
             setImages(prev => prev.map(img => {
                 if (img.id === variantId) {
@@ -459,7 +459,7 @@ const App: React.FC = () => {
         setImages(prev => [placeholder, ...prev]);
 
         try {
-            const result = await generateImage(activeProvider, apiKey!, finalPrompt, finalConfig);
+            const result = await generateImageFromText(apiKey!, finalPrompt, finalConfig);
             const resp = await fetch(result.processedUrl);
             const blob = await resp.blob();
             const file = new File([blob], `ai_gen_${Date.now()}.png`, { type: 'image/png' });
@@ -524,7 +524,7 @@ const App: React.FC = () => {
         setCompositeSelectedIds(prev => new Set(prev).add(tempId));
 
         try {
-            const result = await generateImage(activeProvider, apiKey!, prompt, { format: OutputFormat.JPG, resolution: AiResolution.RES_2K, aspectRatio: AspectRatio.SQUARE });
+            const result = await generateImageFromText(apiKey!, prompt, { format: OutputFormat.JPG, resolution: AiResolution.RES_2K, aspectRatio: AspectRatio.SQUARE });
             const resp = await fetch(result.processedUrl);
             const blob = await resp.blob();
             const file = new File([blob], `ai_pattern_${Date.now()}.jpg`, { type: 'image/jpeg' });
@@ -607,7 +607,7 @@ const App: React.FC = () => {
         }
         setIsCompositeGenerating(true);
         try {
-            const result = await processComposite(activeProvider, apiKey!, selectedImages, prompt || globalPrompt, config);
+            const result = await processCompositeGeneration(apiKey!, selectedImages, prompt || globalPrompt, config);
             setImages(prev => prev.map(img => {
                 if (img.id === compositeId) {
                     return {
@@ -654,7 +654,7 @@ const App: React.FC = () => {
             toast.dismiss(toastId);
             return;
         }
-        const text = await extractTextFromImages(activeProvider, apiKey!, geminiApiKey || '', selectedImages);
+        const text = await extractTextFromImages(apiKey!, selectedImages);
         setOcrText(text);
         setIsExtractingText(false);
         toast.dismiss(toastId);
@@ -1020,7 +1020,7 @@ const App: React.FC = () => {
                 toast.dismiss(toastId);
                 throw new Error("API Key missing");
             }
-            const result = await processGenerativeFill(activeProvider, apiKey!, geminiApiKey || apiKey!, blob, OutputFormat.PNG);
+            const result = await processGenerativeFill(apiKey!, blob, OutputFormat.PNG);
             toast.dismiss(toastId);
             toast.success(customPrompt ? 'Edit Complete!' : 'Outpainting Complete!');
             return result.processedUrl;

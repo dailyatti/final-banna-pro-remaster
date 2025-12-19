@@ -1,11 +1,10 @@
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, ArrowRight, Image as ImageIcon, Wand2, Mic, Loader2, Bot } from 'lucide-react';
+import { Sparkles, ArrowRight, Image as ImageIcon, Wand2, Mic, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { OutputFormat, AiResolution, AspectRatio, ImageProvider } from '../types';
+import { OutputFormat, AiResolution, AspectRatio } from '../types';
 import { enhancePrompt } from '../services/geminiService';
-import { enhancePromptGPT } from '../services/openaiService';
 import { useApiKey } from '../context/ApiKeyContext';
 
 interface TextToImageBarProps {
@@ -26,7 +25,7 @@ export const TextToImageBar: React.FC<TextToImageBarProps> = ({
     isGenerating
 }) => {
     const { t } = useTranslation();
-    const { geminiApiKey, openaiApiKey, activeProvider, setActiveProvider, isOpenaiKeyValid, isGeminiKeyValid } = useApiKey();
+    const { apiKey, isKeyValid } = useApiKey();
     const [isFocused, setIsFocused] = useState(false);
     const [isEnhancing, setIsEnhancing] = useState(false);
 
@@ -38,15 +37,10 @@ export const TextToImageBar: React.FC<TextToImageBarProps> = ({
     };
 
     const handleMagicEnhance = async () => {
-        if (!prompt.trim()) return;
+        if (!prompt.trim() || !apiKey) return;
         setIsEnhancing(true);
         try {
-            let enhanced = prompt;
-            if (activeProvider === 'openai' && openaiApiKey) {
-                enhanced = await enhancePromptGPT(openaiApiKey, prompt);
-            } else if (geminiApiKey) {
-                enhanced = await enhancePrompt(geminiApiKey, prompt);
-            }
+            const enhanced = await enhancePrompt(apiKey, prompt);
             onPromptChange(enhanced);
         } catch (e) {
             console.error(e);
@@ -79,21 +73,11 @@ export const TextToImageBar: React.FC<TextToImageBarProps> = ({
                         <Sparkles className="w-3 h-3" /> {t('nativeGenTitle')}
                     </span>
                 </div>
-                {/* Provider Selector */}
+                {/* Powered by Gemini indicator */}
                 <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-500 uppercase tracking-wider">{t('selectProvider') || 'Provider'}:</span>
-                    <select
-                        value={activeProvider}
-                        onChange={(e) => setActiveProvider(e.target.value as ImageProvider)}
-                        className={`bg-slate-900 border text-[10px] rounded px-2 py-1 outline-none cursor-pointer transition-colors ${activeProvider === 'openai'
-                                ? 'border-cyan-600 text-cyan-400'
-                                : 'border-emerald-600 text-emerald-400'
-                            }`}
-                        disabled={!isOpenaiKeyValid && !isGeminiKeyValid}
-                    >
-                        <option value="gemini" disabled={!isGeminiKeyValid}>✨ Gemini</option>
-                        <option value="openai" disabled={!isOpenaiKeyValid}>🤖 OpenAI</option>
-                    </select>
+                    <span className="text-[10px] text-emerald-400 bg-emerald-950/30 border border-emerald-900 px-2 py-0.5 rounded">
+                        ✨ Powered by Gemini
+                    </span>
                 </div>
             </div>
 

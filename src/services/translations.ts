@@ -104,17 +104,12 @@ const resources = {
       "genAllFormats": "All Formats (JPG, PNG, WEBP)",
       "gen3Variants": "3 Variants (Same Settings)",
       "clearQueue": "Clear Queue",
-      "selectProvider": "AI Provider",
-      "providerGemini": "Google Gemini",
-      "providerOpenai": "OpenAI GPT-1.5",
+      "apiKeyRequired": "API Key Required",
       "geminiApiKey": "Gemini API Key",
-      "openaiApiKey": "OpenAI API Key",
-      "apiKeyDesc": "Choose your AI provider and enter your API key. Your key is stored locally.",
+      "apiKeyDesc": "Enter your Google Gemini API key. Your key is stored locally.",
       "getGeminiKey": "Get a free API key from Google",
-      "getOpenaiKey": "Get an API key from OpenAI",
       "startStudio": "Start Studio",
-      "invalidGeminiKey": "Invalid Gemini key. It should start with AIza...",
-      "invalidOpenaiKey": "Invalid OpenAI key. It should start with sk-..."
+      "invalidGeminiKey": "Invalid Gemini key. It should start with AIza..."
     }
   },
   hu: {
@@ -185,17 +180,12 @@ const resources = {
       "genAllFormats": "Minden Formátum (JPG, PNG, WEBP)",
       "gen3Variants": "3 Variáns (Azonos)",
       "clearQueue": "Sor Törlése",
-      "selectProvider": "AI Szolgáltató",
-      "providerGemini": "Google Gemini",
-      "providerOpenai": "OpenAI GPT-1.5",
+      "apiKeyRequired": "API Kulcs Szükséges",
       "geminiApiKey": "Gemini API Kulcs",
-      "openaiApiKey": "OpenAI API Kulcs",
-      "apiKeyDesc": "Válaszd ki az AI szolgáltatót és add meg az API kulcsot. A kulcsod helyben tárolódik.",
+      "apiKeyDesc": "Add meg a Google Gemini API kulcsodat. A kulcsod helyben tárolódik.",
       "getGeminiKey": "Ingyenes API kulcs a Google-tól",
-      "getOpenaiKey": "API kulcs az OpenAI-tól",
       "startStudio": "Stúdió Indítása",
-      "invalidGeminiKey": "Érvénytelen Gemini kulcs. AIza... kezdetű legyen.",
-      "invalidOpenaiKey": "Érvénytelen OpenAI kulcs. sk-... kezdetű legyen."
+      "invalidGeminiKey": "Érvénytelen Gemini kulcs. AIza... kezdetű legyen."
     }
   }
 };
