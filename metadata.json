@@ -1,7 +1,5 @@
 {
-  "name": "BananaAI Remaster SaaS",
-  "description": "Enterprise-grade AI image reconstruction platform with Live Assistant, Batch Processing, and Advanced Editing.",
-  "requestFramePermissions": [
-    "microphone"
-  ]
+  "name": "Nano Banana Studio Pro",
+  "description": "Professional AI image processor. Batch editing, format conversion (JPG/PNG/WebP), metadata analysis, and high-performance generation using Gemini Flash & Pro.",
+  "requestFramePermissions": []
 }

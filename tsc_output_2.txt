@@ -1,5 +1,0 @@
-src/App.tsx(341,65): error TS2554: Expected 1 arguments, but got 2.
-src/App.tsx(408,77): error TS2554: Expected 2 arguments, but got 3.
-src/App.tsx(487,109): error TS2554: Expected 3 arguments, but got 4.
-src/App.tsx(534,58): error TS2554: Expected 1 arguments, but got 2.
-src/App.tsx(758,64): error TS2345: Argument of type 'Blob' is not assignable to parameter of type 'OutputFormat'.
