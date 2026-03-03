@@ -8,7 +8,7 @@ const validJpegBase64 =
 const event = {
     httpMethod: 'POST',
     body: JSON.stringify({
-        apiKey: 'AIzaSyCtRC5uVobR4E3ZhT1TG40kUgD2Wo5mncI',
+        apiKey: 'YOUR_API_KEY_HERE',
         imageBase64: validJpegBase64,
         prompt: 'Generate a new professional-quality image in 1:1 aspect ratio based on this image.',
         aspectRatio: '1:1'

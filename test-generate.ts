@@ -4,7 +4,7 @@ import { generateEditedImage } from './services/gemini';
 const tinyPngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/5+BFwAE/wJ+6UeVAAAAAElFTkSuQmCC';
 
-const apiKey = 'AIzaSyArNLGQu-Vy2KJp5acMzSK3sPgkZqhIoXY'; // user-provided key
+const apiKey = 'YOUR_API_KEY_HERE'; // user-provided key
 
 (async () => {
     try {

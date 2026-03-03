@@ -5,7 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 const tinyPngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/5+BFwAE/wJ+6UeVAAAAAElFTkSuQmCC';
 
-const apiKey = 'AIzaSyCtRC5uVobR4E3ZhT1TG40kUgD2Wo5mncI'; // Updated user key
+const apiKey = 'YOUR_API_KEY_HERE'; // Updated user key
 
 const candidateModels = [
     'gemini-2.0-flash-exp',

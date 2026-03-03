@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = "AIzaSyArNLGQu-Vy2KJp5acMzSK3sPgkZqhIoXY";
+const apiKey = "YOUR_API_KEY_HERE";
 const ai = new GoogleGenAI({ apiKey });
 
 async function checkStatus() {

@@ -7,7 +7,7 @@ const tinyPngBase64 =
 const event = {
     httpMethod: 'POST',
     body: JSON.stringify({
-        apiKey: 'AIzaSyArNLGQu-Vy2KJp5acMzSK3sPgkZqhIoXY',
+        apiKey: 'YOUR_API_KEY_HERE',
         imageBase64: tinyPngBase64,
         prompt: 'Enhance the image',
         aspectRatio: '1:1',

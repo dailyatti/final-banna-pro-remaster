@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import * as fs from 'fs';
 
-const apiKey = "AIzaSyArNLGQu-Vy2KJp5acMzSK3sPgkZqhIoXY";
+const apiKey = "YOUR_API_KEY_HERE";
 
 async function runTests() {
     console.log("--- STARTING MODEL AVAILABILITY TESTS ---");

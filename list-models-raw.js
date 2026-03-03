@@ -1,7 +1,7 @@
 
 import https from 'https';
 
-const apiKey = 'AIzaSyCtRC5uVobR4E3ZhT1TG40kUgD2Wo5mncI';
+const apiKey = 'YOUR_API_KEY_HERE';
 
 const options = {
     hostname: 'generativelanguage.googleapis.com',

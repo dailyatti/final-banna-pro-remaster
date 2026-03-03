@@ -1,7 +1,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = 'AIzaSyCtRC5uVobR4E3ZhT1TG40kUgD2Wo5mncI';
+const apiKey = 'YOUR_API_KEY_HERE';
 
 (async () => {
     console.log("Starting debug test with gemini-2.5-flash...");
